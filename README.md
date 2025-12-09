@@ -1,4 +1,4 @@
-## NailedIT Healthcare Portal
+## NailedIT Healthcare Project
 
 Full-stack Node/Express + MySQL app that lets patients, doctors, labs, and admins collaborate on nail-health diagnosis, appointments, and lab workflows. The SPA lives in `public/`, the API in `src/`.
 
