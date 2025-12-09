@@ -1,0 +1,802 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NailedIT - Health Portal</title>
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <a href="#" class="logo" onclick="showPage('home'); return false;">
+                <img src="logo.png" alt="NailedIT Logo">
+                <span>NailedIT</span>
+            </a>
+            <div class="nav-tabs">
+                <button class="nav-tab active" onclick="showPage('home')">Home</button>
+                <button class="nav-tab" onclick="showPage('signup')">Sign Up</button>
+                <button class="nav-tab" onclick="showPage('login')">Login</button>
+                <button class="nav-tab" onclick="showPage('patient')">Patient</button>
+                <button class="nav-tab" onclick="showPage('doctor')">Doctor</button>
+                <button class="nav-tab" onclick="showPage('upload')">Upload</button>
+            </div>
+            <div class="auth-status">
+                <button class="btn-small" id="logoutBtn" onclick="logout()" style="display: none;">Logout</button>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Container -->
+    <div class="container">
+        <!-- Home Page -->
+        <div id="home" class="page active">
+            <!-- Hero Section -->
+            <div class="hero">
+                <div class="hero-content">
+                    <h1>Welcome to NailedIT</h1>
+                    <p>Your comprehensive health portal for nail condition analysis and healthcare management</p>
+                    <div class="status-badge" id="connectionStatus">Checking connection...</div>
+                    <div class="hero-badges">
+                        <div class="status-badge connected">Secure Platform</div>
+                        <div class="status-badge connected">HIPAA Compliant</div>
+                    </div>
+                    <div class="hero-cta">
+                        <button class="btn btn-primary btn-large" onclick="showPage('signup')">Get Started</button>
+                        <button class="btn btn-secondary btn-large" onclick="showPage('login')">Login</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Features Section -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Platform Features</h2>
+                    <p class="card-subtitle">Everything you need for comprehensive healthcare management</p>
+                </div>
+                <div class="features-grid">
+                    <div class="feature-card">
+                        <div class="feature-icon"></div>
+                        <h3>Secure Authentication</h3>
+                        <p>Enterprise-grade security with JWT tokens, role-based access control, and encrypted password storage. Your data is protected with industry-standard security measures.</p>
+                        <ul class="feature-list">
+                            <li>Multi-factor authentication ready</li>
+                            <li>30-day access tokens</li>
+                            <li>Automatic token refresh</li>
+                        </ul>
+                    </div>
+                    <div class="feature-card">
+                        <div class="feature-icon"></div>
+                        <h3>AI-Powered Analysis</h3>
+                        <p>Advanced machine learning algorithms analyze nail images to detect various conditions including Koilonychia, Terry's Nails, Clubbing, and more with confidence scores.</p>
+                        <ul class="feature-list">
+                            <li>Real-time image processing</li>
+                            <li>Detailed condition reports</li>
+                            <li>Confidence scoring</li>
+                        </ul>
+                    </div>
+                    <div class="feature-card">
+                        <div class="feature-icon"></div>
+                        <h3>Doctor Dashboard</h3>
+                        <p>Comprehensive dashboard for healthcare providers to manage patients, review submissions, provide medical feedback, and track appointments efficiently.</p>
+                        <ul class="feature-list">
+                            <li>Patient management</li>
+                            <li>Pending reviews queue</li>
+                            <li>Appointment scheduling</li>
+                        </ul>
+                    </div>
+                    <div class="feature-card">
+                        <div class="feature-icon"></div>
+                        <h3>Appointment Booking</h3>
+                        <p>Seamless appointment scheduling system connecting patients with doctors and labs. View availability, book appointments, and manage your healthcare calendar.</p>
+                        <ul class="feature-list">
+                            <li>Real-time availability</li>
+                            <li>Automated reminders</li>
+                            <li>Status tracking</li>
+                        </ul>
+                    </div>
+                    <div class="feature-card">
+                        <div class="feature-icon"></div>
+                        <h3>Health Records</h3>
+                        <p>Complete health history tracking including all submissions, appointments, lab tests, and medical feedback in one centralized location.</p>
+                        <ul class="feature-list">
+                            <li>Complete medical history</li>
+                            <li>Lab test results</li>
+                            <li>Timeline view</li>
+                        </ul>
+                    </div>
+                    <div class="feature-card">
+                        <div class="feature-icon"></div>
+                        <h3>Healthcare Marketplace</h3>
+                        <p>Browse and connect with verified doctors and labs. Find specialists, view credentials, and choose the right healthcare provider for your needs.</p>
+                        <ul class="feature-list">
+                            <li>Verified providers</li>
+                            <li>Specialty search</li>
+                            <li>Provider profiles</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <!-- How It Works Section -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">How It Works</h2>
+                    <p class="card-subtitle">Simple steps to better healthcare</p>
+                </div>
+                <div class="steps-container">
+                    <div class="step-item">
+                        <div class="step-number">1</div>
+                        <div class="step-content">
+                            <h3>Create Your Account</h3>
+                            <p>Sign up as a Patient, Doctor, or Lab. Choose your role and complete your profile with relevant information.</p>
+                        </div>
+                    </div>
+                    <div class="step-item">
+                        <div class="step-number">2</div>
+                        <div class="step-content">
+                            <h3>Upload & Analyze</h3>
+                            <p>Patients can upload nail images for AI-powered analysis. Get instant predictions with confidence scores.</p>
+                        </div>
+                    </div>
+                    <div class="step-item">
+                        <div class="step-number">3</div>
+                        <div class="step-content">
+                            <h3>Get Professional Feedback</h3>
+                            <p>Doctors review submissions and provide detailed medical feedback, recommendations, and treatment plans.</p>
+                        </div>
+                    </div>
+                    <div class="step-item">
+                        <div class="step-number">4</div>
+                        <div class="step-content">
+                            <h3>Book Appointments</h3>
+                            <p>Schedule appointments with doctors or labs directly through the platform. Manage your healthcare calendar.</p>
+                        </div>
+                    </div>
+                    <div class="step-item">
+                        <div class="step-number">5</div>
+                        <div class="step-content">
+                            <h3>Track Your Health</h3>
+                            <p>Access your complete health history, view all submissions, appointments, and lab results in one place.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- User Types Section -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Who Can Use NailedIT?</h2>
+                    <p class="card-subtitle">Designed for everyone in the healthcare ecosystem</p>
+                </div>
+                <div class="user-types-grid">
+                    <div class="user-type-card">
+                        <h3>For Patients</h3>
+                        <div class="user-type-icon"></div>
+                        <ul class="user-type-features">
+                            <li>Upload nail images for AI analysis</li>
+                            <li>Receive instant condition predictions</li>
+                            <li>Get professional medical feedback</li>
+                            <li>Book appointments with doctors</li>
+                            <li>Browse and connect with labs</li>
+                            <li>Track complete health history</li>
+                            <li>View all submissions and results</li>
+                        </ul>
+                        <button class="btn btn-primary" onclick="showPage('signup')">Sign Up as Patient</button>
+                    </div>
+                    <div class="user-type-card">
+                        <h3>For Doctors</h3>
+                        <div class="user-type-icon"></div>
+                        <ul class="user-type-features">
+                            <li>View all linked patients</li>
+                            <li>Review patient submissions</li>
+                            <li>Provide medical feedback</li>
+                            <li>Manage appointment schedule</li>
+                            <li>Track patient analytics</li>
+                            <li>Access pending reviews queue</li>
+                            <li>Communicate with patients</li>
+                        </ul>
+                        <button class="btn btn-primary" onclick="showPage('signup')">Sign Up as Doctor</button>
+                    </div>
+                    <div class="user-type-card">
+                        <h3>For Labs</h3>
+                        <div class="user-type-icon"></div>
+                        <ul class="user-type-features">
+                            <li>List available diagnostic tests</li>
+                            <li>Receive test requests</li>
+                            <li>Upload lab results</li>
+                            <li>Manage test queue</li>
+                            <li>Track test statistics</li>
+                            <li>Connect with doctors</li>
+                            <li>View linked patients</li>
+                        </ul>
+                        <button class="btn btn-primary" onclick="showPage('signup')">Sign Up as Lab</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Benefits Section -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Why Choose NailedIT?</h2>
+                    <p class="card-subtitle">Benefits that matter to you</p>
+                </div>
+                <div class="benefits-grid">
+                    <div class="benefit-item">
+                        <h4> Fast & Efficient</h4>
+                        <p>Get AI analysis results in seconds. No waiting for appointments to get initial insights.</p>
+                    </div>
+                    <div class="benefit-item">
+                        <h4> Secure & Private</h4>
+                        <p>Your health data is encrypted and protected. We follow industry best practices for data security.</p>
+                    </div>
+                    <div class="benefit-item">
+                        <h4> Connected Healthcare</h4>
+                        <p>Seamlessly connect with doctors and labs. All your healthcare needs in one platform.</p>
+                    </div>
+                    <div class="benefit-item">
+                        <h4> Easy to Use</h4>
+                        <p>Intuitive interface designed for everyone. No technical knowledge required.</p>
+                    </div>
+                    <div class="benefit-item">
+                        <h4> Complete History</h4>
+                        <p>Track all your health records, submissions, and appointments in one place.</p>
+                    </div>
+                    <div class="benefit-item">
+                        <h4> AI-Powered</h4>
+                        <p>Leverage advanced machine learning for accurate condition detection and analysis.</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Call to Action Section -->
+            <div class="card cta-card">
+                <div class="cta-content">
+                    <h2>Ready to Get Started?</h2>
+                    <p>Join thousands of users who trust NailedIT for their healthcare needs</p>
+                    <div class="cta-buttons">
+                        <button class="btn btn-primary btn-large" onclick="showPage('signup')">Create Free Account</button>
+                        <button class="btn btn-secondary btn-large" onclick="showPage('login')">Login to Your Account</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Sign Up Page -->
+        <div id="signup" class="page">
+            <div class="signup-container">
+                <div class="signup-logo">
+                    <img src="logo.png" alt="NailedIT Logo">
+                    </div>
+                <div class="signup-card">
+                    <h2 class="signup-title">Create Your Account</h2>
+                    <p class="signup-subtitle">Join NailedIT Health Portal</p>
+                    
+                    <!-- Role Selection -->
+                    <div class="role-selection">
+                        <h3>I am a:</h3>
+                        <div class="role-options">
+                            <button class="role-btn" data-role="patient" onclick="selectRole('patient')">
+                                <img src="patient.png" alt="Patient" class="role-image">
+                                <div class="role-label">Patient</div>
+                            </button>
+                            <button class="role-btn" data-role="doctor" onclick="selectRole('doctor')">
+                                <img src="doctor.png" alt="Doctor" class="role-image">
+                                <div class="role-label">Doctor</div>
+                            </button>
+                            <button class="role-btn" data-role="lab" onclick="selectRole('lab')">
+                                <img src="lab.png" alt="Lab" class="role-image">
+                                <div class="role-label">Lab</div>
+                            </button>
+                    </div>
+                </div>
+
+                    <!-- Sign Up Form -->
+                    <form id="signupForm" class="signup-form hidden">
+                    <div class="form-group">
+                            <label>Full Name</label>
+                            <input type="text" id="signupName" placeholder="Enter your full name" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Email</label>
+                            <input type="email" id="signupEmail" placeholder="Enter your email" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Password</label>
+                            <input type="password" id="signupPassword" placeholder="Min 6 characters" required>
+                    </div>
+                        
+                        <!-- Patient specific fields -->
+                        <div id="patientFields" class="role-specific-fields hidden">
+                    <div class="form-group">
+                                <label>Date of Birth (optional)</label>
+                                <input type="date" id="signupDOB">
+                    </div>
+                </div>
+
+                        <!-- Doctor specific fields -->
+                        <div id="doctorFields" class="role-specific-fields hidden">
+                    <div class="form-group">
+                                <label>Specialty</label>
+                                <input type="text" id="signupSpecialty" placeholder="e.g., Dermatology">
+                    </div>
+                    <div class="form-group">
+                                <label>Clinic Address</label>
+                                <input type="text" id="signupClinicAddress" placeholder="123 Main St">
+                    </div>
+                </div>
+
+                        <!-- Lab specific fields -->
+                        <div id="labFields" class="role-specific-fields hidden">
+                            <div class="form-group">
+                                <label>Lab Address</label>
+                                <input type="text" id="signupLabAddress" placeholder="456 Lab St">
+                            </div>
+                </div>
+
+                        <button type="submit" class="btn btn-primary btn-block">Sign Up</button>
+                        <div id="signupResponse" class="response-box hidden"></div>
+                    </form>
+
+                    <p class="signup-footer">
+                        Already have an account? <a href="#" onclick="showPage('login'); return false;">Login here</a>
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Login Page -->
+        <div id="login" class="page">
+            <div class="signup-container">
+                <div class="signup-logo">
+                    <img src="logo.png" alt="NailedIT Logo">
+            </div>
+                <div class="signup-card">
+                    <h2 class="signup-title">Welcome Back</h2>
+                    <p class="signup-subtitle">Login to your account</p>
+                    
+                    <form id="loginForm" class="signup-form">
+                    <div class="form-group">
+                            <label>Email</label>
+                            <input type="email" id="loginEmail" placeholder="Enter your email" required>
+                    </div>
+                    <div class="form-group">
+                            <label>Password</label>
+                            <input type="password" id="loginPassword" placeholder="Enter your password" required>
+                    </div>
+                        <button type="button" class="btn btn-primary btn-block" onclick="login()">Login</button>
+                        <div id="loginResponse" class="response-box hidden"></div>
+                    </form>
+
+                    <p class="signup-footer">
+                        Don't have an account? <a href="#" onclick="showPage('signup'); return false;">Sign up here</a>
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Patient Features Page -->
+        <div id="patient" class="page">
+                <div class="card">
+                <div class="card-header">
+                    <span class="card-icon"></span>
+                    <h2 class="card-title">Patient Features</h2>
+                </div>
+
+                <div class="btn-group mb-2">
+                    <button class="btn btn-primary" onclick="getAllDoctors()">Get All Doctors</button>
+                    <button class="btn btn-primary" onclick="getAllLabs()">Get All Labs</button>
+                </div>
+
+                <div id="patientDoctors" class="hidden">
+                    <h3 style="color: var(--dark-color); margin: 2rem 0 1rem 0;">Available Doctors</h3>
+                    <div id="doctorsList"></div>
+        </div>
+
+                <div id="patientLabs" class="hidden">
+                    <h3 style="color: var(--dark-color); margin: 2rem 0 1rem 0;">Available Labs</h3>
+                    <div id="labsList"></div>
+                </div>
+
+                <div style="margin-top: 2rem; padding-top: 2rem; border-top: 3px solid var(--secondary-color);">
+                    <h3 style="color: var(--dark-color); margin-bottom: 1rem;">Book Appointment</h3>
+                    <div class="form-group">
+                        <label>Appointment Type</label>
+                        <select id="appointmentTypeOld" onchange="toggleAppointmentTypeOld()" class="form-control">
+                            <option value="doctor">With Doctor</option>
+                            <option value="lab">With Lab</option>
+                        </select>
+                    </div>
+                    <div class="form-grid">
+                        <div class="form-group" id="doctorIdGroupOld">
+                            <label>Doctor ID</label>
+                            <input type="number" id="appointmentDoctorIdOld" placeholder="Enter doctor ID">
+                        </div>
+                        <div class="form-group hidden" id="labIdGroupOld">
+                            <label>Lab ID</label>
+                            <input type="number" id="appointmentLabIdOld" placeholder="Enter lab ID">
+                        </div>
+                        <div class="form-group">
+                            <label>Appointment Time</label>
+                            <input type="datetime-local" id="appointmentTimeOld">
+                        </div>
+                    </div>
+                    <button class="btn btn-primary" onclick="bookAppointmentOld()">Book Appointment</button>
+                    <div id="appointmentResponseOld" class="response-box hidden"></div>
+        </div>
+
+                <div id="patientResponse" class="response-box hidden"></div>
+            </div>
+        </div>
+
+        <!-- Doctor Features Page -->
+        <div id="doctor" class="page">
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-icon"></span>
+                    <h2 class="card-title">Doctor Features</h2>
+            </div>
+            
+                <div class="btn-group mb-2">
+                    <button class="btn btn-primary" onclick="getDoctorPatients()">View My Patients</button>
+            </div>
+
+                <div id="doctorPatients" class="hidden">
+                    <h3 style="color: var(--dark-color); margin: 2rem 0 1rem 0;">Linked Patients</h3>
+                    <div id="patientsList"></div>
+                </div>
+
+                <div style="margin-top: 2rem; padding-top: 2rem; border-top: 3px solid var(--secondary-color);">
+                    <h3 style="color: var(--dark-color); margin-bottom: 1rem;">View Patient Submissions</h3>
+                    <div class="form-group">
+                        <label>Patient ID</label>
+                        <input type="number" id="submissionPatientId" placeholder="Enter patient ID">
+                    </div>
+                    <button type="button" class="btn btn-primary" onclick="getPatientSubmissions()">View Submissions</button>
+                    <div id="doctorPageSubmissionsList"></div>
+                </div>
+
+                <div style="margin-top: 2rem; padding-top: 2rem; border-top: 3px solid var(--secondary-color);">
+                    <h3 style="color: var(--dark-color); margin-bottom: 1rem;">Add Feedback</h3>
+                    <div class="form-grid">
+                    <div class="form-group">
+                            <label>Submission ID</label>
+                            <input type="number" id="feedbackSubmissionId" placeholder="Enter submission ID">
+                    </div>
+                    <div class="form-group">
+                            <label>Feedback</label>
+                            <textarea id="feedbackText" placeholder="Enter your medical feedback"></textarea>
+                    </div>
+                    </div>
+                    <button class="btn btn-primary" onclick="addFeedback()">Submit Feedback</button>
+                    <div id="feedbackResponse" class="response-box hidden"></div>
+                </div>
+
+                <div id="doctorResponse" class="response-box hidden"></div>
+                    </div>
+                </div>
+
+        <!-- Image Upload Page -->
+        <div id="upload" class="page">
+                <div class="card">
+                <div class="card-header">
+                    <span class="card-icon"></span>
+                    <h2 class="card-title">Upload Nail Image</h2>
+            </div>
+
+                <div class="upload-area" id="uploadArea" onclick="document.getElementById('nailImage').click()">
+                    <div class="upload-icon">Upload</div>
+                    <h3 style="color: var(--dark-color); margin-bottom: 0.5rem;">Click to Upload or Drag & Drop</h3>
+                    <p style="color: var(--text-light);">JPEG, PNG (Max 5MB)</p>
+                    <input type="file" id="nailImage" class="file-input" accept="image/jpeg,image/png,image/jpg" onchange="handleFileSelect(event)">
+                </div>
+
+                <div id="imagePreview" class="hidden text-center mt-2">
+                    <img id="previewImg" class="preview-image" alt="Preview">
+                </div>
+
+                <div class="btn-group mt-2">
+                    <button class="btn btn-primary" onclick="uploadNailImage()">Upload & Analyze</button>
+            </div>
+
+                <div id="uploadResponse" class="response-box hidden"></div>
+                    </div>
+                </div>
+
+        <!-- Patient Dashboard -->
+        <div id="patient-dashboard" class="page">
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Patient Dashboard</h2>
+                </div>
+
+                <!-- My Appointments Section -->
+                <div class="dashboard-section">
+                    <h3>My Appointments</h3>
+                    <button class="btn btn-primary" onclick="loadPatientAppointments()">Refresh Appointments</button>
+                    <div id="patientAppointmentsList" class="mt-2"></div>
+                </div>
+
+                <!-- Upload Nail Image Section -->
+                <div class="dashboard-section">
+                    <h3>Upload Nail Image</h3>
+                    <div class="upload-area" id="patientUploadArea" onclick="document.getElementById('patientNailImage').click()">
+                        <div class="upload-icon">Upload</div>
+                        <h4 style="color: var(--dark-color); margin-bottom: 0.5rem;">Click to Upload or Drag & Drop</h4>
+                        <p style="color: var(--text-light);">JPEG, PNG (Max 5MB)</p>
+                        <input type="file" id="patientNailImage" class="file-input" accept="image/jpeg,image/png,image/jpg" onchange="handlePatientFileSelect(event)">
+                    </div>
+                    <div id="patientImagePreview" class="hidden text-center mt-2">
+                        <img id="patientPreviewImg" class="preview-image" alt="Preview">
+                    </div>
+                    <button class="btn btn-primary mt-2" onclick="uploadPatientNailImage()">Upload & Analyze</button>
+                    <div id="patientUploadResponse" class="response-box hidden"></div>
+                </div>
+
+                <!-- My Analysis History Section -->
+                <div class="dashboard-section">
+                    <h3>My Analysis History</h3>
+                    <button class="btn btn-primary" onclick="loadPatientSubmissions()">Refresh History</button>
+                    <div id="patientSubmissionsList" class="mt-2"></div>
+                </div>
+
+                <!-- Find Doctors/Labs Section -->
+                <div class="dashboard-section">
+                    <h3>Find Doctors & Labs</h3>
+                    <div class="btn-group">
+                        <button class="btn btn-primary" onclick="getAllDoctors()">View Doctors</button>
+                        <button class="btn btn-primary" onclick="getAllLabs()">View Labs</button>
+                    </div>
+                    <div id="patientDoctors" class="hidden mt-2">
+                        <h4>Available Doctors</h4>
+                        <div id="doctorsList"></div>
+                    </div>
+                    <div id="patientLabs" class="hidden mt-2">
+                        <h4>Available Labs</h4>
+                        <div id="labsList"></div>
+                    </div>
+                    <div class="mt-2">
+                        <h4>Book Doctor Appointment</h4>
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label>Doctor ID</label>
+                                <input type="number" id="appointmentDoctorId" placeholder="Enter doctor ID">
+                            </div>
+                            <div class="form-group">
+                                <label>Appointment Time</label>
+                                <input type="datetime-local" id="appointmentDoctorTime">
+                            </div>
+                        </div>
+                        <button class="btn btn-primary" onclick="bookDoctorAppointment()">Book Doctor Appointment</button>
+                        <div id="appointmentDoctorResponse" class="response-box hidden"></div>
+                    </div>
+
+                    <div class="mt-3">
+                        <h4>Book Lab Appointment</h4>
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label>Lab ID</label>
+                                <input type="number" id="appointmentLabId" placeholder="Enter lab ID">
+                            </div>
+                            <div class="form-group">
+                                <label>Appointment Time</label>
+                                <input type="datetime-local" id="appointmentLabTime">
+                            </div>
+                        </div>
+                        <button class="btn btn-primary" onclick="bookLabAppointment()">Book Lab Appointment</button>
+                        <div id="appointmentLabResponse" class="response-box hidden"></div>
+                    </div>
+                </div>
+
+                <!-- Health Reports Section -->
+                <div class="dashboard-section">
+                    <h3>Health Reports</h3>
+                    <p>Your health reports and summaries will appear here.</p>
+                    <div id="patientHealthReports"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Doctor Dashboard -->
+        <div id="doctor-dashboard" class="page">
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Doctor Dashboard</h2>
+                </div>
+
+                <!-- My Patients List Section -->
+                <div class="dashboard-section">
+                    <h3>My Patients List</h3>
+                    <button class="btn btn-primary" onclick="getDoctorPatients()">Refresh Patients</button>
+                    <div id="doctorPatients" class="hidden mt-2">
+                        <div id="patientsList"></div>
+                    </div>
+                </div>
+
+                <!-- Pending Reviews Section -->
+                <div class="dashboard-section">
+                    <h3>Pending Reviews</h3>
+                    <button class="btn btn-primary" onclick="loadPendingReviews()">Refresh Pending Reviews</button>
+                    <div id="pendingReviewsList" class="mt-2"></div>
+                </div>
+
+                <!-- Appointment Schedule Section -->
+                <div class="dashboard-section">
+                    <h3>Appointment Schedule</h3>
+                    <button class="btn btn-primary" onclick="loadDoctorAppointments()">Refresh Schedule</button>
+                    <div id="doctorAppointmentsList" class="mt-2"></div>
+                </div>
+
+                <!-- Analytics Section -->
+                <div class="dashboard-section">
+                    <h3>Analytics</h3>
+                    <div id="doctorAnalytics">
+                        <p>Loading analytics...</p>
+                    </div>
+                </div>
+
+                <!-- Patient Messages Section -->
+                <div class="dashboard-section">
+                    <h3>Patient Messages</h3>
+                    <p>Messaging functionality will be available here.</p>
+                    <div id="doctorMessages"></div>
+                </div>
+
+                <!-- View Patient Submissions Section -->
+                <div class="dashboard-section">
+                    <h3>View Patient Submissions</h3>
+                    <div class="form-group">
+                        <label>Patient ID</label>
+                        <input type="number" id="submissionPatientId" placeholder="Enter patient ID">
+                    </div>
+                    <button type="button" class="btn btn-primary" onclick="getPatientSubmissions()">View Submissions</button>
+                    <div id="doctorDashboardSubmissionsList" class="mt-2"></div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- Lab Dashboard -->
+        <div id="lab-dashboard" class="page">
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Lab Dashboard</h2>
+                </div>
+
+                <!-- Lab Appointments Section -->
+                <div class="dashboard-section">
+                    <h3>Lab Appointments</h3>
+                    <button class="btn btn-primary" onclick="loadLabTestRequests()">Refresh Appointments</button>
+                    <div id="labTestRequestsList" class="mt-2"></div>
+                </div>
+
+                <!-- Lab Test Queue Section -->
+                <div class="dashboard-section">
+                    <h3>Lab Test Queue</h3>
+                    <button class="btn btn-primary" onclick="loadLabQueue()">Refresh Queue</button>
+                    <div id="labQueueList" class="mt-2"></div>
+                </div>
+
+                <!-- Pending Tests Section -->
+                <div class="dashboard-section">
+                    <h3>Pending Tests</h3>
+                    <div id="labPendingTests"></div>
+                </div>
+
+                <!-- Linked Patients Section -->
+                <div class="dashboard-section">
+                    <h3>Linked Patients</h3>
+                    <div id="labLinkedPatients"></div>
+                </div>
+
+                <!-- Test Statistics Section -->
+                <div class="dashboard-section">
+                    <h3>Test Statistics</h3>
+                    <div id="labTestStatistics"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Admin Dashboard -->
+        <div id="admin-dashboard" class="page">
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Admin Dashboard</h2>
+                </div>
+
+                <!-- Dashboard Statistics Section -->
+                <div class="dashboard-section">
+                    <h3>System Statistics</h3>
+                    <button class="btn btn-primary" onclick="loadAdminDashboard()">Refresh Statistics</button>
+                    <div id="adminStats" class="mt-2"></div>
+                </div>
+
+                <!-- User Management Section -->
+                <div class="dashboard-section">
+                    <h3>User Management</h3>
+                    <button class="btn btn-primary" onclick="loadAllUsers()">Refresh Users</button>
+                    <div class="form-group mt-2">
+                        <input type="text" id="userSearch" placeholder="Search users by name or email..." onkeyup="filterUsers()">
+                    </div>
+                    <div id="usersList" class="mt-2"></div>
+                </div>
+
+                <!-- Pending Verifications Section -->
+                <div class="dashboard-section">
+                    <h3>Pending Verifications</h3>
+                    <button class="btn btn-primary" onclick="loadPendingVerifications()">Refresh</button>
+                    <div id="pendingVerificationsList" class="mt-2"></div>
+                </div>
+
+                <!-- All Submissions Section -->
+                <div class="dashboard-section">
+                    <h3>All Submissions</h3>
+                    <button class="btn btn-primary" onclick="loadAllSubmissions()">Refresh</button>
+                    <div id="allSubmissionsList" class="mt-2"></div>
+                </div>
+
+                <!-- All Appointments Section -->
+                <div class="dashboard-section">
+                    <h3>All Appointments</h3>
+                    <button class="btn btn-primary" onclick="loadAllAppointments()">Refresh</button>
+                    <div id="allAppointmentsList" class="mt-2"></div>
+                </div>
+
+                <!-- All Lab Tests Section -->
+                <div class="dashboard-section">
+                    <h3>All Lab Tests</h3>
+                    <button class="btn btn-primary" onclick="loadAllLabTests()">Refresh</button>
+                    <div id="allLabTestsList" class="mt-2"></div>
+                </div>
+
+                <!-- Patient History Section -->
+                <div class="dashboard-section">
+                    <h3>View Patient History</h3>
+                    <div class="form-group">
+                        <label>Patient ID</label>
+                        <input type="number" id="patientHistoryId" placeholder="Enter patient ID">
+                    </div>
+                    <button class="btn btn-primary" onclick="loadPatientHistory()">View History</button>
+                    <div id="patientHistoryDetails" class="mt-2"></div>
+                </div>
+            </div>
+        </div>
+            </div>
+
+    <!-- Feedback Modal -->
+    <div id="feedbackModal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Add Medical Feedback</h3>
+                <button class="modal-close" onclick="closeFeedbackModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Submission ID</label>
+                    <input type="number" id="modalFeedbackSubmissionId" readonly>
+                </div>
+                <div class="form-group">
+                    <label>Patient Name</label>
+                    <input type="text" id="modalFeedbackPatientName" readonly>
+                </div>
+                <div class="form-group">
+                    <label>AI Prediction</label>
+                    <input type="text" id="modalFeedbackPrediction" readonly>
+                </div>
+                <div class="form-group">
+                    <label>Your Medical Feedback <span class="required">*</span></label>
+                    <textarea id="modalFeedbackText" placeholder="Enter your detailed medical feedback, recommendations, or observations..." rows="6" required></textarea>
+                </div>
+                <div id="modalFeedbackResponse" class="response-box hidden"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeFeedbackModal()">Cancel</button>
+                <button class="btn btn-primary" onclick="submitModalFeedback()">Submit Feedback</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/app.js"></script>
+</body>
+</html>
