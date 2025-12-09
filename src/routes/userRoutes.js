@@ -91,7 +91,7 @@ router.post('/register',
                 // ignore
             }
         }
-        res.status(500).send('Server Error');
+        res.status(500).json({ msg: 'Server Error', error: err.message });
     }
 });
 
@@ -214,7 +214,7 @@ router.post('/register-doctor',
         if (connection) {
             try { await connection.rollback(); connection.release(); } catch (e) {}
         }
-        res.status(500).send('Server Error');
+        res.status(500).json({ msg: 'Server Error', error: err.message });
     }
 });
 
@@ -268,7 +268,7 @@ router.post('/register-lab',
         if (connection) {
             try { await connection.rollback(); connection.release(); } catch (e) {}
         }
-        res.status(500).send('Server Error');
+        res.status(500).json({ msg: 'Server Error', error: err.message });
     }
 });
 
@@ -304,7 +304,7 @@ router.post('/refresh', async (req, res) => {
         res.json({ token: newAccessToken });
     } catch (err) {
         console.error(err && err.message);
-        res.status(500).send('Server Error');
+        res.status(500).json({ msg: 'Server Error', error: err.message });
     }
 });
 
@@ -330,7 +330,7 @@ router.get('/me', auth, async (req, res) => {
         res.json({ user });
     } catch (err) {
         console.error(err && err.message);
-        res.status(500).send('Server Error');
+        res.status(500).json({ msg: 'Server Error', error: err.message });
     }
 });
 
@@ -349,7 +349,7 @@ router.post('/logout', auth, async (req, res) => {
         res.json({ ok: true });
     } catch (err) {
         console.error(err && err.message);
-        res.status(500).send('Server Error');
+        res.status(500).json({ msg: 'Server Error', error: err.message });
     }
 });
 

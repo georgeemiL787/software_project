@@ -11,7 +11,7 @@ const storage = multer.diskStorage({
     destination: (req, file, cb) => {
         // Ensure directory exists
         const fs = require('fs');
-        const dir = path.join(__dirname, '..', 'uploads', 'results');
+        const dir = path.join(__dirname, '..', '..', 'uploads', 'results');
         if (!fs.existsSync(dir)) {
             fs.mkdirSync(dir, { recursive: true });
         }
@@ -58,17 +58,19 @@ router.get('/queue', [auth, authorize('lab')], async (req, res) => {
 
         const lab_id = lab[0].id;
 
-        // Get all tests that are "scheduled" at this lab
+        // Get all tests that are "scheduled" or "requested" at this lab
         const [tests] = await db.query(
-            `SELECT lt.id, lt.test_type, lt.status, lt.requested_at, p.id AS patient_id, u.name AS patient_name
+            `SELECT lt.id, lt.test_type, lt.status, lt.requested_at, lt.results_url,
+             p.id AS patient_id, u.name AS patient_name, u.email AS patient_email
              FROM lab_tests lt
              JOIN patients p ON lt.patient_id = p.id
              JOIN users u ON p.user_id = u.id
-             WHERE lt.lab_id = ? AND lt.status = 'scheduled'`,
+             WHERE lt.lab_id = ? AND lt.status IN ('scheduled', 'requested', 'completed')
+             ORDER BY lt.requested_at DESC`,
             [lab_id]
         );
 
-        res.json(tests);
+        res.json(tests || []);
     } catch (err) {
         console.error('Lab queue error:', err);
         res.status(500).json({ msg: err.message || 'Server Error' });
@@ -109,7 +111,7 @@ router.get('/appointments', [auth, authorize('lab')], async (req, res) => {
 router.put('/appointments/:appointment_id', [auth, authorize('lab')], async (req, res) => {
     try {
         const { appointment_id } = req.params;
-        const { status } = req.body || {};
+        const { status, notes } = req.body || {};
 
         const allowedStatuses = ['pending', 'confirmed', 'completed', 'cancelled'];
         const nextStatus = status && allowedStatuses.includes(status) ? status : 'confirmed';
@@ -126,7 +128,14 @@ router.put('/appointments/:appointment_id', [auth, authorize('lab')], async (req
             return res.status(404).json({ msg: 'Appointment not found for this lab' });
         }
 
-        await db.query('UPDATE appointments SET status = ? WHERE id = ? AND lab_id = ?', [nextStatus, appointment_id, lab_id]);
+        // Update appointment with status and optional notes
+        if (notes !== undefined) {
+            await db.query('UPDATE appointments SET status = ?, notes = ? WHERE id = ? AND lab_id = ?', 
+                [nextStatus, notes, appointment_id, lab_id]);
+        } else {
+            await db.query('UPDATE appointments SET status = ? WHERE id = ? AND lab_id = ?', 
+                [nextStatus, appointment_id, lab_id]);
+        }
 
         const [updatedRows] = await db.query(
             `SELECT a.*, u.name AS patient_name, u.email AS patient_email

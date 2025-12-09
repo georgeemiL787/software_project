@@ -24,7 +24,7 @@ router.get('/patients', [auth, authorize('doctor')], async (req, res) => {
     res.json(patients);
   } catch (err) {
     console.error(err && err.message);
-    res.status(500).send('Server Error');
+    res.status(500).json({ msg: 'Server Error', error: err.message });
   }
 });
 
@@ -43,7 +43,7 @@ router.get('/submissions/:patient_id', [auth, authorize('doctor')], async (req, 
     res.json(submissions || []);
   } catch (err) {
     console.error(err && err.message);
-    res.status(500).send('Server Error');
+    res.status(500).json({ msg: 'Server Error', error: err.message });
   }
 });
 
@@ -87,7 +87,7 @@ router.get('/pending-reviews', [auth, authorize('doctor')], async (req, res) => 
     res.json(submissions || []);
   } catch (err) {
     console.error(err && err.message);
-    res.status(500).send('Server Error');
+    res.status(500).json({ msg: 'Server Error', error: err.message });
   }
 });
 
@@ -152,7 +152,7 @@ router.get('/analytics', [auth, authorize('doctor')], async (req, res) => {
     });
   } catch (err) {
     console.error(err && err.message);
-    res.status(500).send('Server Error');
+    res.status(500).json({ msg: 'Server Error', error: err.message });
   }
 });
 
@@ -180,7 +180,7 @@ router.get('/my-appointments', [auth, authorize('doctor')], async (req, res) => 
     res.json(appointments || []);
   } catch (err) {
     console.error(err && err.message);
-    res.status(500).send('Server Error');
+    res.status(500).json({ msg: 'Server Error', error: err.message });
   }
 });
 
@@ -199,7 +199,62 @@ router.put('/submissions/:submission_id/feedback', [auth, authorize('doctor')], 
     res.json({ msg: 'Feedback updated successfully' });
   } catch (err) {
     console.error(err && err.message);
-    res.status(500).send('Server Error');
+    res.status(500).json({ msg: 'Server Error', error: err.message });
+  }
+});
+
+// --- @route    PUT /api/doctors/appointments/:appointment_id/status ---
+// --- @desc     Accept or refuse a patient appointment ---
+// --- @access   Private (Doctor) ---
+router.put('/appointments/:appointment_id/status', [auth, authorize('doctor')], async (req, res) => {
+  try {
+    const { appointment_id } = req.params;
+    const { status, notes } = req.body || {};
+    
+    // Validate status
+    const validStatuses = ['confirmed', 'cancelled'];
+    if (!status || !validStatuses.includes(status)) {
+      return res.status(400).json({ msg: 'Status must be "confirmed" (accept) or "cancelled" (refuse)' });
+    }
+
+    // Verify the doctor owns this appointment
+    const [doctorRows] = await db.query('SELECT id FROM doctors WHERE user_id = ? LIMIT 1', [req.user.id]);
+    if (!doctorRows || doctorRows.length === 0) return res.status(404).json({ msg: 'Doctor profile not found' });
+    const doctor_id = doctorRows[0].id;
+
+    // Check if appointment exists and belongs to this doctor
+    const [appointmentRows] = await db.query(
+      'SELECT * FROM appointments WHERE id = ? AND doctor_id = ?',
+      [appointment_id, doctor_id]
+    );
+    
+    if (!appointmentRows || appointmentRows.length === 0) {
+      return res.status(404).json({ msg: 'Appointment not found or you do not have permission to modify it' });
+    }
+
+    // Update appointment status
+    const updateQuery = notes 
+      ? 'UPDATE appointments SET status = ?, notes = ? WHERE id = ? AND doctor_id = ?'
+      : 'UPDATE appointments SET status = ? WHERE id = ? AND doctor_id = ?';
+    
+    const updateParams = notes 
+      ? [status, notes, appointment_id, doctor_id]
+      : [status, appointment_id, doctor_id];
+
+    const [result] = await db.query(updateQuery, updateParams);
+    
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ msg: 'Appointment not found or could not be updated' });
+    }
+
+    res.json({ 
+      msg: status === 'confirmed' ? 'Appointment accepted successfully' : 'Appointment refused successfully',
+      appointment_id: parseInt(appointment_id),
+      status 
+    });
+  } catch (err) {
+    console.error(err && err.message);
+    res.status(500).json({ msg: 'Server Error', error: err.message });
   }
 });
 

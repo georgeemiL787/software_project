@@ -16,7 +16,7 @@ router.get('/doctors', [auth, authorize('patient')], async (req, res) => {
     res.json(doctors);
   } catch (err) {
     console.error(err && err.message);
-    res.status(500).send('Server Error');
+    res.status(500).json({ msg: 'Server Error', error: err.message });
   }
 });
 
@@ -41,7 +41,7 @@ router.get('/labs', [auth, authorize('patient')], async (req, res) => {
     res.json(labsWithParsedTests);
   } catch (err) {
     console.error(err && err.message);
-    res.status(500).send('Server Error');
+    res.status(500).json({ msg: 'Server Error', error: err.message });
   }
 });
 
@@ -54,28 +54,68 @@ router.get('/my-appointments', [auth, authorize('patient')], async (req, res) =>
     if (!patientRows || patientRows.length === 0) return res.status(404).json({ msg: 'Patient profile not found' });
     const patient_id = patientRows[0].id;
 
-    const [appointments] = await db.query(`
-      SELECT 
-        a.*,
-        d.specialty,
-        du.name as doctor_name,
-        du.email as doctor_email,
-        lu.name as lab_name,
-        lu.email as lab_email,
-        l.lab_address
-      FROM appointments a
-      LEFT JOIN doctors d ON a.doctor_id = d.id
-      LEFT JOIN users du ON d.user_id = du.id
-      LEFT JOIN labs l ON a.lab_id = l.id
-      LEFT JOIN users lu ON l.user_id = lu.id
-      WHERE a.patient_id = ?
-      ORDER BY a.appointment_time DESC
-    `, [patient_id]);
+    // Check if lab_id column exists in appointments table
+    let hasLabIdColumn = false;
+    try {
+      const [columns] = await db.query(`
+        SELECT COLUMN_NAME 
+        FROM INFORMATION_SCHEMA.COLUMNS 
+        WHERE TABLE_SCHEMA = DATABASE() 
+        AND TABLE_NAME = 'appointments' 
+        AND COLUMN_NAME = 'lab_id'
+      `);
+      hasLabIdColumn = columns && columns.length > 0;
+    } catch (checkErr) {
+      console.warn('Could not check for lab_id column:', checkErr.message);
+    }
+
+    let appointments;
+    if (hasLabIdColumn) {
+      // Query with lab support
+      [appointments] = await db.query(`
+        SELECT 
+          a.*,
+          d.specialty,
+          du.name as doctor_name,
+          du.email as doctor_email,
+          lu.name as lab_name,
+          lu.email as lab_email,
+          l.lab_address
+        FROM appointments a
+        LEFT JOIN doctors d ON a.doctor_id = d.id
+        LEFT JOIN users du ON d.user_id = du.id
+        LEFT JOIN labs l ON a.lab_id = l.id
+        LEFT JOIN users lu ON l.user_id = lu.id
+        WHERE a.patient_id = ?
+        ORDER BY a.appointment_time DESC
+      `, [patient_id]);
+    } else {
+      // Query without lab support (backward compatibility)
+      [appointments] = await db.query(`
+        SELECT 
+          a.*,
+          d.specialty,
+          du.name as doctor_name,
+          du.email as doctor_email,
+          NULL as lab_name,
+          NULL as lab_email,
+          NULL as lab_address
+        FROM appointments a
+        LEFT JOIN doctors d ON a.doctor_id = d.id
+        LEFT JOIN users du ON d.user_id = du.id
+        WHERE a.patient_id = ?
+        ORDER BY a.appointment_time DESC
+      `, [patient_id]);
+    }
 
     res.json(appointments || []);
   } catch (err) {
-    console.error(err && err.message);
-    res.status(500).send('Server Error');
+    console.error('Error fetching appointments:', err);
+    res.status(500).json({ 
+      msg: 'Server Error', 
+      error: err.message,
+      details: process.env.NODE_ENV === 'development' ? err.stack : undefined
+    });
   }
 });
 
@@ -96,7 +136,7 @@ router.get('/my-submissions', [auth, authorize('patient')], async (req, res) => 
     res.json(submissions || []);
   } catch (err) {
     console.error(err && err.message);
-    res.status(500).send('Server Error');
+    res.status(500).json({ msg: 'Server Error', error: err.message });
   }
 });
 
@@ -174,7 +214,7 @@ router.post('/appointments', [auth, authorize('patient')], async (req, res) => {
       const errorMsg = lab_id ? 'Lab not found' : 'Doctor not found';
       return res.status(404).json({ msg: errorMsg });
     }
-    res.status(500).send('Server Error');
+    res.status(500).json({ msg: 'Server Error', error: err.message });
   }
 });
 
@@ -252,7 +292,7 @@ router.post('/lab-appointments', [auth, authorize('patient')], async (req, res) 
   } catch (err) {
     console.error(err && err.message);
     if (err && err.sql && err.sql.includes('FOREIGN KEY')) return res.status(404).json({ msg: 'Lab not found' });
-    res.status(500).send('Server Error');
+    res.status(500).json({ msg: 'Server Error', error: err.message });
   }
 });
 

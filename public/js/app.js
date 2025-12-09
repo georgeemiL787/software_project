@@ -121,6 +121,68 @@ function redirectToDashboard() {
 
 // Page Navigation
 function showPage(pageId) {
+    const role = getUserRole();
+    const token = getToken();
+    
+    // Role-based access control - prevent unauthorized access to dashboards
+    if (pageId === 'lab-dashboard') {
+        if (!token || role !== 'lab') {
+            alert('Access denied. Lab dashboard is only available for lab users.');
+            if (role === 'patient') {
+                showPage('patient-dashboard');
+            } else if (role === 'doctor') {
+                showPage('doctor-dashboard');
+            } else if (role === 'admin') {
+                showPage('admin-dashboard');
+            } else {
+                showPage('home');
+            }
+            return;
+        }
+    } else if (pageId === 'doctor-dashboard') {
+        if (!token || role !== 'doctor') {
+            alert('Access denied. Doctor dashboard is only available for doctor users.');
+            if (role === 'patient') {
+                showPage('patient-dashboard');
+            } else if (role === 'lab') {
+                showPage('lab-dashboard');
+            } else if (role === 'admin') {
+                showPage('admin-dashboard');
+            } else {
+                showPage('home');
+            }
+            return;
+        }
+    } else if (pageId === 'admin-dashboard') {
+        if (!token || role !== 'admin') {
+            alert('Access denied. Admin dashboard is only available for admin users.');
+            if (role === 'patient') {
+                showPage('patient-dashboard');
+            } else if (role === 'doctor') {
+                showPage('doctor-dashboard');
+            } else if (role === 'lab') {
+                showPage('lab-dashboard');
+            } else {
+                showPage('home');
+            }
+            return;
+        }
+    } else if (pageId === 'patient-dashboard') {
+        if (!token || role !== 'patient') {
+            alert('Access denied. Patient dashboard is only available for patient users.');
+            if (role === 'doctor') {
+                showPage('doctor-dashboard');
+            } else if (role === 'lab') {
+                showPage('lab-dashboard');
+            } else if (role === 'admin') {
+                showPage('admin-dashboard');
+            } else {
+                showPage('home');
+            }
+            return;
+        }
+    }
+    
     document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
     document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
     
@@ -147,6 +209,7 @@ function showPage(pageId) {
         loadDoctorAnalytics();
     } else if (pageId === 'lab-dashboard') {
         loadLabTestRequests();
+        loadLabQueue();
     } else if (pageId === 'admin-dashboard') {
         loadAdminDashboard();
         loadAllUsers();
@@ -596,11 +659,33 @@ function displayLabs(labs) {
 
 // New separate booking flows (doctor vs lab) for clarity in the UI
 async function parseJsonSafe(response) {
+    // Clone the response so we can read it multiple times if needed
+    const clonedResponse = response.clone();
     try {
-        return await response.json();
+        const contentType = response.headers.get('content-type') || '';
+        if (contentType.includes('application/json')) {
+            return await response.json();
+        } else {
+            // Not JSON, read as text from cloned response
+            const text = await clonedResponse.text();
+            return { error: text || 'Unexpected response format' };
+        }
     } catch (e) {
-        const text = await response.text().catch(() => '');
-        return { error: text || 'Unexpected response format' };
+        // If JSON parsing fails, try to read as text from cloned response
+        try {
+            const text = await clonedResponse.text();
+            // Try to parse as JSON if it looks like JSON
+            if (text.trim().startsWith('{') || text.trim().startsWith('[')) {
+                try {
+                    return JSON.parse(text);
+                } catch (parseError) {
+                    return { error: text || 'Unexpected response format' };
+                }
+            }
+            return { error: text || 'Unexpected response format' };
+        } catch (textError) {
+            return { error: 'Unexpected response format' };
+        }
     }
 }
 
@@ -793,48 +878,124 @@ function displayPatients(patients) {
     document.getElementById('doctorPatients').classList.remove('hidden');
 }
 
+// Function for doctor dashboard
+async function getPatientSubmissionsFromDashboard() {
+    const token = getToken();
+    if (!token) {
+        alert('Please login first');
+        return;
+    }
+    
+    const patientIdInput = document.getElementById('doctorDashboardPatientId');
+    const patientId = patientIdInput ? patientIdInput.value.trim() : '';
+    
+    if (!patientId) {
+        alert('Please enter a patient ID');
+        return;
+    }
+    
+    const container = document.getElementById('doctorDashboardSubmissionsList');
+    if (!container) {
+        console.error('doctorDashboardSubmissionsList container not found');
+        alert('Error: Submissions container not found');
+        return;
+    }
+    
+    // Show loading state
+    container.innerHTML = '<p>Loading submissions...</p>';
+    
+    try {
+        const response = await fetch(`${API_BASE}/api/doctors/submissions/${patientId}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        const data = await parseJsonSafe(response);
+        
+        if (response.ok) {
+            if (!data || data.length === 0) {
+                container.innerHTML = '<p>No submissions found for this patient.</p>';
+                return;
+            }
+            renderAnalysisCards(data, 'doctorDashboardSubmissionsList', {
+                renderActions: (s) => {
+                    const prediction = (s.ai_prediction || 'N/A').replace(/'/g, "\\'");
+                    const patientName = (s.patient_name || 'Patient').replace(/'/g, "\\'");
+                    const feedbackVal = s.doctor_feedback ? `'${s.doctor_feedback.replace(/'/g, "\\'")}'` : 'null';
+                    if (!s.doctor_feedback) {
+                        return `<button class="btn btn-primary btn-small" onclick="openFeedbackModal(${s.id}, '${patientName}', '${prediction}')">Add Feedback</button>`;
+                    }
+                    return `<button class="btn btn-secondary btn-small" onclick="openFeedbackModal(${s.id}, '${patientName}', '${prediction}', ${feedbackVal})">Update Feedback</button>`;
+                }
+            });
+        } else {
+            const errorMsg = data.error || data.msg || 'Failed to load submissions';
+            container.innerHTML = `<div class="response-box error"><strong>Error:</strong> ${errorMsg}</div>`;
+        }
+    } catch (error) {
+        container.innerHTML = `<div class="response-box error"><strong>Error:</strong> ${error.message}</div>`;
+        console.error('Error fetching patient submissions:', error);
+    }
+}
+
+// Function for doctor page (legacy)
 async function getPatientSubmissions() {
     const token = getToken();
     if (!token) {
         showResponse('doctorResponse', { error: 'Please login first' }, 'error');
         return;
     }
-    const patientId = document.getElementById('submissionPatientId').value;
+    const patientIdInput = document.getElementById('submissionPatientId');
+    const patientId = patientIdInput ? patientIdInput.value.trim() : '';
+    
     if (!patientId) {
         showResponse('doctorResponse', { error: 'Please enter patient ID' }, 'error');
         return;
     }
+    
+    // Determine which container to use for displaying results
+    const targetId = document.getElementById('doctorPageSubmissionsList') 
+        ? 'doctorPageSubmissionsList' 
+        : 'submissionsList';
+    
+    const container = document.getElementById(targetId);
+    if (!container) {
+        console.error('Submissions container not found');
+        showResponse('doctorResponse', { error: 'Submissions container not found' }, 'error');
+        return;
+    }
+    
+    container.innerHTML = '<p>Loading submissions...</p>';
+    
     try {
         const response = await fetch(`${API_BASE}/api/doctors/submissions/${patientId}`, {
             headers: { 'Authorization': `Bearer ${token}` }
         });
-        const data = await response.json();
-        const targetId = document.getElementById('doctorDashboardSubmissionsList') 
-            ? 'doctorDashboardSubmissionsList' 
-            : (document.getElementById('doctorPageSubmissionsList') ? 'doctorPageSubmissionsList' : 'submissionsList');
+        
+        const data = await parseJsonSafe(response);
+        
         if (response.ok) {
             if (!data || data.length === 0) {
-                document.getElementById(targetId).innerHTML = '<p>No submissions found.</p>';
+                container.innerHTML = '<p>No submissions found for this patient.</p>';
                 return;
             }
             renderAnalysisCards(data, targetId, {
                 renderActions: (s) => {
                     const prediction = (s.ai_prediction || 'N/A').replace(/'/g, "\\'");
+                    const patientName = (s.patient_name || 'Patient').replace(/'/g, "\\'");
                     const feedbackVal = s.doctor_feedback ? `'${s.doctor_feedback.replace(/'/g, "\\'")}'` : 'null';
                     if (!s.doctor_feedback) {
-                        return `<button class="btn btn-primary" onclick="openFeedbackModal(${s.id}, 'Patient', '${prediction}')">Add Feedback</button>`;
+                        return `<button class="btn btn-primary btn-small" onclick="openFeedbackModal(${s.id}, '${patientName}', '${prediction}')">Add Feedback</button>`;
                     }
-                    return `<button class="btn btn-secondary" onclick="openFeedbackModal(${s.id}, 'Patient', '${prediction}', ${feedbackVal})">Update Feedback</button>`;
+                    return `<button class="btn btn-secondary btn-small" onclick="openFeedbackModal(${s.id}, '${patientName}', '${prediction}', ${feedbackVal})">Update Feedback</button>`;
                 }
             });
         } else {
-            document.getElementById(targetId).innerHTML = `<div class="response-box error">${JSON.stringify(data, null, 2)}</div>`;
+            const errorMsg = data.error || data.msg || 'Failed to load submissions';
+            container.innerHTML = `<div class="response-box error"><strong>Error:</strong> ${errorMsg}</div>`;
         }
     } catch (error) {
-        const targetId = document.getElementById('doctorDashboardSubmissionsList') 
-            ? 'doctorDashboardSubmissionsList' 
-            : (document.getElementById('doctorPageSubmissionsList') ? 'doctorPageSubmissionsList' : 'submissionsList');
-        document.getElementById(targetId).innerHTML = `<div class="response-box error">${error.message}</div>`;
+        container.innerHTML = `<div class="response-box error"><strong>Error:</strong> ${error.message}</div>`;
+        console.error('Error fetching patient submissions:', error);
     }
 }
 
@@ -855,18 +1016,24 @@ async function loadPatientAppointments() {
         showResponse('patientUploadResponse', { error: 'Please login first' }, 'error');
         return;
     }
+    const container = document.getElementById('patientAppointmentsList');
+    if (!container) {
+        console.error('patientAppointmentsList container not found');
+        return;
+    }
     try {
         const response = await fetch(`${API_BASE}/api/patients/my-appointments`, {
             headers: { 'Authorization': `Bearer ${token}` }
         });
-        const data = await response.json();
+        const data = await parseJsonSafe(response);
         if (response.ok) {
             displayPatientAppointments(data);
         } else {
-            document.getElementById('patientAppointmentsList').innerHTML = `<div class="response-box error">${JSON.stringify(data, null, 2)}</div>`;
+            const errorMsg = data.error || data.msg || 'Failed to load appointments';
+            container.innerHTML = `<div class="response-box error"><strong>Error:</strong> ${errorMsg}${data.details ? `<br><small>${data.details}</small>` : ''}</div>`;
         }
     } catch (error) {
-        document.getElementById('patientAppointmentsList').innerHTML = `<div class="response-box error">${error.message}</div>`;
+        container.innerHTML = `<div class="response-box error"><strong>Error:</strong> ${error.message}</div>`;
     }
 }
 
@@ -1130,35 +1297,131 @@ document.addEventListener('DOMContentLoaded', () => {
 async function loadDoctorAppointments() {
     const token = getToken();
     if (!token) return;
+    const container = document.getElementById('doctorAppointmentsList');
+    if (!container) return;
     try {
         const response = await fetch(`${API_BASE}/api/doctors/my-appointments`, {
             headers: { 'Authorization': `Bearer ${token}` }
         });
-        const data = await response.json();
+        const data = await parseJsonSafe(response);
         if (response.ok) {
             displayDoctorAppointments(data);
         } else {
-            document.getElementById('doctorAppointmentsList').innerHTML = `<div class="response-box error">${JSON.stringify(data, null, 2)}</div>`;
+            const errorMsg = data.error || data.msg || 'Failed to load appointments';
+            container.innerHTML = `<div class="response-box error"><strong>Error:</strong> ${errorMsg}</div>`;
         }
     } catch (error) {
-        document.getElementById('doctorAppointmentsList').innerHTML = `<div class="response-box error">${error.message}</div>`;
+        container.innerHTML = `<div class="response-box error"><strong>Error:</strong> ${error.message}</div>`;
+    }
+}
+
+async function acceptAppointment(appointmentId) {
+    const token = getToken();
+    if (!token) {
+        alert('Please login first');
+        return;
+    }
+    
+    if (!confirm('Are you sure you want to accept this appointment?')) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`${API_BASE}/api/doctors/appointments/${appointmentId}/status`, {
+            method: 'PUT',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ status: 'confirmed' })
+        });
+        
+        const data = await parseJsonSafe(response);
+        if (response.ok) {
+            alert('Appointment accepted successfully!');
+            loadDoctorAppointments();
+        } else {
+            alert('Error: ' + (data.error || data.msg || 'Failed to accept appointment'));
+        }
+    } catch (error) {
+        alert('Error: ' + error.message);
+    }
+}
+
+async function refuseAppointment(appointmentId) {
+    const token = getToken();
+    if (!token) {
+        alert('Please login first');
+        return;
+    }
+    
+    const reason = prompt('Please provide a reason for refusing this appointment (optional):');
+    if (reason === null) {
+        // User cancelled the prompt
+        return;
+    }
+    
+    if (!confirm('Are you sure you want to refuse this appointment?')) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`${API_BASE}/api/doctors/appointments/${appointmentId}/status`, {
+            method: 'PUT',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ 
+                status: 'cancelled',
+                notes: reason ? `Refused: ${reason}` : 'Appointment refused by doctor'
+            })
+        });
+        
+        const data = await parseJsonSafe(response);
+        if (response.ok) {
+            alert('Appointment refused successfully!');
+            loadDoctorAppointments();
+        } else {
+            alert('Error: ' + (data.error || data.msg || 'Failed to refuse appointment'));
+        }
+    } catch (error) {
+        alert('Error: ' + error.message);
     }
 }
 
 function displayDoctorAppointments(appointments) {
     const container = document.getElementById('doctorAppointmentsList');
+    if (!container) {
+        console.error('doctorAppointmentsList container not found');
+        return;
+    }
     if (!appointments || appointments.length === 0) {
         container.innerHTML = '<p>No appointments found.</p>';
         return;
     }
-    container.innerHTML = appointments.map(apt => `
+    console.log('Displaying appointments:', appointments);
+    container.innerHTML = appointments.map(apt => {
+        const isPending = apt.status === 'pending';
+        console.log(`Appointment ${apt.id}: status=${apt.status}, isPending=${isPending}`);
+        const actionButtons = isPending ? `
+            <div class="appointment-actions mt-1">
+                <button class="btn btn-success btn-small" onclick="acceptAppointment(${apt.id})" type="button">Accept</button>
+                <button class="btn btn-danger btn-small" onclick="refuseAppointment(${apt.id})" type="button">Refuse</button>
+            </div>
+        ` : '';
+        
+        return `
         <div class="appointment-item">
-            <h4>Appointment with ${apt.patient_name}</h4>
+            <h4>Appointment with ${apt.patient_name || 'Unknown Patient'}</h4>
+            <p><strong>Patient Email:</strong> ${apt.patient_email || 'N/A'}</p>
             <p><strong>Date & Time:</strong> ${new Date(apt.appointment_time).toLocaleString()}</p>
             <p><strong>Status:</strong> <span class="status-badge ${apt.status}">${apt.status}</span></p>
             ${apt.notes ? `<p><strong>Notes:</strong> ${apt.notes}</p>` : ''}
+            ${actionButtons}
         </div>
-    `).join('');
+    `;
+    }).join('');
 }
 
 async function loadDoctorAnalytics() {
@@ -1210,69 +1473,101 @@ async function loadDoctorAnalytics() {
 // Lab Dashboard Functions
 async function loadLabTestRequests() {
     const token = getToken();
-    if (!token) return;
+    if (!token) {
+        console.error('No token found');
+        return;
+    }
     const container = document.getElementById('labTestRequestsList');
+    if (!container) {
+        console.error('labTestRequestsList container not found');
+        return;
+    }
     setLabState(container, 'Loading lab appointments...');
     try {
         const response = await fetch(`${API_BASE}/api/labs/appointments`, {
             headers: { 'Authorization': `Bearer ${token}` }
         });
-        const data = await response.json();
+        const data = await parseJsonSafe(response);
         if (response.ok) {
             displayLabAppointments(data);
         } else {
             showLabError(container, data);
         }
     } catch (error) {
+        console.error('Error loading lab appointments:', error);
         showLabError(container, { msg: error.message });
     }
 }
 
 async function loadLabQueue() {
     const token = getToken();
-    if (!token) return;
+    if (!token) {
+        console.error('No token found');
+        return;
+    }
     const container = document.getElementById('labQueueList');
-    if (!container) return;
+    if (!container) {
+        console.error('labQueueList container not found');
+        return;
+    }
     setLabState(container, 'Loading test queue...');
     try {
         const response = await fetch(`${API_BASE}/api/labs/queue`, {
             headers: { 'Authorization': `Bearer ${token}` }
         });
-        const data = await response.json();
+        const data = await parseJsonSafe(response);
         if (response.ok) {
             displayLabQueue(data);
             renderLabStats(data);
             renderLabLinkedPatients(data);
+            renderLabPendingTests(data);
         } else {
             showLabError(container, data);
         }
     } catch (error) {
+        console.error('Error loading lab queue:', error);
         showLabError(container, { msg: error.message });
     }
 }
 
 function displayLabAppointments(appointments) {
     const container = document.getElementById('labTestRequestsList');
+    if (!container) {
+        console.error('labTestRequestsList container not found');
+        return;
+    }
     if (!appointments || appointments.length === 0) {
         setLabState(container, 'No lab appointments found.');
         return;
     }
     container.classList.add('lab-card-grid');
-    container.innerHTML = appointments.map(apt => `
+    container.innerHTML = appointments.map(apt => {
+        const isPending = apt.status === 'pending';
+        const actionButtons = isPending ? `
+            <div class="analysis-actions">
+                <button class="btn btn-small btn-success" onclick="acceptLabAppointment(${apt.id})">Accept</button>
+                <button class="btn btn-small btn-danger" onclick="refuseLabAppointment(${apt.id})">Refuse</button>
+            </div>
+        ` : apt.status === 'confirmed' ? `
+            <div class="analysis-actions">
+                <button class="btn btn-small btn-primary" onclick="updateLabAppointmentStatus(${apt.id}, 'completed')">Mark Complete</button>
+                <button class="btn btn-small btn-danger" onclick="updateLabAppointmentStatus(${apt.id}, 'cancelled')">Cancel</button>
+            </div>
+        ` : '';
+        
+        return `
         <div class="lab-card">
             <div class="analysis-meta">
                 <span class="pill">#${apt.id}</span>
                 ${apt.appointment_time ? `<span class="pill subtle">${new Date(apt.appointment_time).toLocaleString()}</span>` : ''}
                 ${apt.patient_name ? `<span class="pill subtle">Patient: ${apt.patient_name}</span>` : ''}
+                ${apt.patient_email ? `<span class="pill subtle">${apt.patient_email}</span>` : ''}
             </div>
             <h4>Lab Appointment</h4>
             <p><strong>Status:</strong> <span class="status-badge ${apt.status}">${apt.status}</span></p>
             ${apt.notes ? `<p><strong>Notes:</strong> ${apt.notes}</p>` : ''}
-            <div class="analysis-actions">
-                <button class="btn btn-small btn-primary" onclick="updateLabAppointmentStatus(${apt.id}, 'confirmed')">Confirm</button>
-                <button class="btn btn-small btn-success" onclick="updateLabAppointmentStatus(${apt.id}, 'completed')">Complete</button>
-                <button class="btn btn-small btn-danger" onclick="updateLabAppointmentStatus(${apt.id}, 'cancelled')">Cancel</button>
-            </div>
+            ${actionButtons}
+            ${apt.status === 'confirmed' || apt.status === 'completed' ? `
             <div class="form-group mt-1">
                 <label>Upload Result (PDF/JPG/PNG)</label>
                 <input type="file" id="labApptResultFile-${apt.id}" accept=".pdf,image/jpeg,image/png" class="lab-file-input">
@@ -1281,8 +1576,10 @@ function displayLabAppointments(appointments) {
                 <button class="btn btn-primary btn-small" onclick="uploadLabAppointmentResult(${apt.id}, 'labApptResultFile-${apt.id}', 'labApptResultResp-${apt.id}')">Upload Result</button>
             </div>
             <div id="labApptResultResp-${apt.id}" class="response-box hidden"></div>
+            ` : ''}
         </div>
-    `).join('');
+    `;
+    }).join('');
 }
 
 function displayLabQueue(tests) {
@@ -1293,15 +1590,22 @@ function displayLabQueue(tests) {
         return;
     }
     container.classList.add('lab-card-grid');
-    container.innerHTML = tests.map(test => `
+    container.innerHTML = tests.map(test => {
+        const isCompleted = test.status === 'completed';
+        const canUpload = test.status === 'scheduled' || test.status === 'requested';
+        
+        return `
         <div class="lab-card">
             <div class="analysis-meta">
                 <span class="pill">#${test.id}</span>
                 ${test.requested_at ? `<span class="pill subtle">${new Date(test.requested_at).toLocaleString()}</span>` : ''}
                 ${test.patient_name ? `<span class="pill subtle">Patient: ${test.patient_name}</span>` : ''}
+                ${test.patient_email ? `<span class="pill subtle">${test.patient_email}</span>` : ''}
             </div>
-            <h4>${test.test_type}</h4>
+            <h4>${test.test_type || 'Lab Test'}</h4>
             <p><strong>Status:</strong> <span class="status-badge ${test.status}">${test.status}</span></p>
+            ${test.results_url ? `<p><strong>Result:</strong> <a href="${API_BASE}/${test.results_url}" target="_blank">View Result</a></p>` : ''}
+            ${canUpload ? `
             <div class="form-group mt-1">
                 <label>Upload Result (PDF/JPG/PNG)</label>
                 <input type="file" id="labResultFile-${test.id}" accept=".pdf,image/jpeg,image/png" class="lab-file-input">
@@ -1310,23 +1614,40 @@ function displayLabQueue(tests) {
                 <button class="btn btn-primary btn-small" onclick="uploadLabResult(${test.id}, 'labResultFile-${test.id}', 'labResultResp-${test.id}')">Upload Result</button>
             </div>
             <div id="labResultResp-${test.id}" class="response-box hidden"></div>
+            ` : ''}
         </div>
-    `).join('');
+    `;
+    }).join('');
 }
 
 async function uploadLabResult(testId, inputId, respId) {
     const token = getToken();
     if (!token) {
-        showResponse(respId, { error: 'Please login first' }, 'error');
+        const respEl = document.getElementById(respId);
+        if (respEl) {
+            respEl.innerHTML = '<div class="response-box error">Please login first</div>';
+            respEl.classList.remove('hidden');
+        }
         return;
     }
     const input = document.getElementById(inputId);
     if (!input || !input.files || !input.files[0]) {
-        showResponse(respId, { error: 'Please choose a file to upload' }, 'error');
+        const respEl = document.getElementById(respId);
+        if (respEl) {
+            respEl.innerHTML = '<div class="response-box error">Please choose a file to upload</div>';
+            respEl.classList.remove('hidden');
+        }
         return;
     }
     const formData = new FormData();
     formData.append('resultFile', input.files[0]);
+    
+    const respEl = document.getElementById(respId);
+    if (respEl) {
+        respEl.innerHTML = '<div class="response-box info">Uploading...</div>';
+        respEl.classList.remove('hidden');
+    }
+    
     try {
         const response = await fetch(`${API_BASE}/api/labs/tests/${testId}/upload`, {
             method: 'POST',
@@ -1335,30 +1656,55 @@ async function uploadLabResult(testId, inputId, respId) {
         });
         const data = await parseJsonSafe(response);
         if (response.ok) {
-            showResponse(respId, data, 'success');
+            if (respEl) {
+                respEl.innerHTML = '<div class="response-box success">Result uploaded successfully!</div>';
+            }
             input.value = '';
-            loadLabQueue();
+            setTimeout(() => {
+                loadLabQueue();
+            }, 1000);
         } else {
-            showResponse(respId, { error: data.msg || data.error || 'Upload failed' }, 'error');
+            const errorMsg = data.error || data.msg || 'Upload failed';
+            if (respEl) {
+                respEl.innerHTML = `<div class="response-box error">${errorMsg}</div>`;
+            }
         }
     } catch (error) {
-        showResponse(respId, { error: error.message }, 'error');
+        if (respEl) {
+            respEl.innerHTML = `<div class="response-box error">${error.message}</div>`;
+        }
+        console.error('Upload error:', error);
     }
 }
 
 async function uploadLabAppointmentResult(appointmentId, inputId, respId) {
     const token = getToken();
     if (!token) {
-        showResponse(respId, { error: 'Please login first' }, 'error');
+        const respEl = document.getElementById(respId);
+        if (respEl) {
+            respEl.innerHTML = '<div class="response-box error">Please login first</div>';
+            respEl.classList.remove('hidden');
+        }
         return;
     }
     const input = document.getElementById(inputId);
     if (!input || !input.files || !input.files[0]) {
-        showResponse(respId, { error: 'Please choose a file to upload' }, 'error');
+        const respEl = document.getElementById(respId);
+        if (respEl) {
+            respEl.innerHTML = '<div class="response-box error">Please choose a file to upload</div>';
+            respEl.classList.remove('hidden');
+        }
         return;
     }
     const formData = new FormData();
     formData.append('resultFile', input.files[0]);
+    
+    const respEl = document.getElementById(respId);
+    if (respEl) {
+        respEl.innerHTML = '<div class="response-box info">Uploading...</div>';
+        respEl.classList.remove('hidden');
+    }
+    
     try {
         const response = await fetch(`${API_BASE}/api/labs/appointments/${appointmentId}/upload`, {
             method: 'POST',
@@ -1367,14 +1713,24 @@ async function uploadLabAppointmentResult(appointmentId, inputId, respId) {
         });
         const data = await parseJsonSafe(response);
         if (response.ok) {
-            showResponse(respId, data, 'success');
+            if (respEl) {
+                respEl.innerHTML = '<div class="response-box success">Result uploaded successfully!</div>';
+            }
             input.value = '';
-            loadLabTestRequests();
+            setTimeout(() => {
+                loadLabTestRequests();
+            }, 1000);
         } else {
-            showResponse(respId, { error: data.msg || data.error || 'Upload failed' }, 'error');
+            const errorMsg = data.error || data.msg || 'Upload failed';
+            if (respEl) {
+                respEl.innerHTML = `<div class="response-box error">${errorMsg}</div>`;
+            }
         }
     } catch (error) {
-        showResponse(respId, { error: error.message }, 'error');
+        if (respEl) {
+            respEl.innerHTML = `<div class="response-box error">${error.message}</div>`;
+        }
+        console.error('Upload error:', error);
     }
 }
 
@@ -1428,6 +1784,26 @@ function renderLabLinkedPatients(tests) {
     linkedEl.innerHTML = patients.map(p => `<div class="list-item"><strong>${p}</strong></div>`).join('');
 }
 
+function renderLabPendingTests(tests) {
+    const pendingEl = document.getElementById('labPendingTests');
+    if (!pendingEl) return;
+    if (!tests || tests.length === 0) {
+        pendingEl.innerHTML = '<div class="empty-state">No pending tests.</div>';
+        return;
+    }
+    const pendingTests = tests.filter(t => t.status === 'requested' || t.status === 'scheduled');
+    if (pendingTests.length === 0) {
+        pendingEl.innerHTML = '<div class="empty-state">No pending tests.</div>';
+        return;
+    }
+    pendingEl.innerHTML = pendingTests.map(test => `
+        <div class="list-item">
+            <strong>${test.test_type || 'Lab Test'}</strong> - Patient: ${test.patient_name || 'Unknown'}
+            <span class="status-badge ${test.status}">${test.status}</span>
+        </div>
+    `).join('');
+}
+
 // Lab UI helpers
 function setLabState(container, message) {
     if (!container) return;
@@ -1440,6 +1816,79 @@ function showLabError(container, data) {
     const msg = data?.msg || data?.error || 'Something went wrong';
     container.classList.remove('lab-card-grid');
     container.innerHTML = `<div class="response-box error">${msg}</div>`;
+}
+
+async function acceptLabAppointment(appointmentId) {
+    const token = getToken();
+    if (!token) {
+        alert('Please login first');
+        return;
+    }
+    
+    if (!confirm('Are you sure you want to accept this appointment?')) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`${API_BASE}/api/labs/appointments/${appointmentId}`, {
+            method: 'PUT',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ status: 'confirmed' })
+        });
+        const data = await parseJsonSafe(response);
+        if (response.ok) {
+            alert('Appointment accepted successfully!');
+            loadLabTestRequests();
+        } else {
+            alert('Error: ' + (data.error || data.msg || 'Failed to accept appointment'));
+        }
+    } catch (error) {
+        alert('Error: ' + error.message);
+    }
+}
+
+async function refuseLabAppointment(appointmentId) {
+    const token = getToken();
+    if (!token) {
+        alert('Please login first');
+        return;
+    }
+    
+    const reason = prompt('Please provide a reason for refusing this appointment (optional):');
+    if (reason === null) {
+        // User cancelled the prompt
+        return;
+    }
+    
+    if (!confirm('Are you sure you want to refuse this appointment?')) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`${API_BASE}/api/labs/appointments/${appointmentId}`, {
+            method: 'PUT',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ 
+                status: 'cancelled',
+                notes: reason ? `Refused: ${reason}` : 'Appointment refused by lab'
+            })
+        });
+        const data = await parseJsonSafe(response);
+        if (response.ok) {
+            alert('Appointment refused successfully!');
+            loadLabTestRequests();
+        } else {
+            alert('Error: ' + (data.error || data.msg || 'Failed to refuse appointment'));
+        }
+    } catch (error) {
+        alert('Error: ' + error.message);
+    }
 }
 
 async function updateLabAppointmentStatus(appointmentId, status) {
