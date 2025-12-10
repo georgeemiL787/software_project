@@ -4,6 +4,7 @@ const multer = require('multer');
 const path = require('path');
 const db = require('../db');
 const { auth, authorize } = require('../middleware/auth');
+const notificationService = require('../services/notificationService');
 
 // --- Multer Configuration for Lab Result Uploads ---
 // Set up storage for uploaded result files
@@ -128,6 +129,15 @@ router.put('/appointments/:appointment_id', [auth, authorize('lab')], async (req
             return res.status(404).json({ msg: 'Appointment not found for this lab' });
         }
 
+        // Get appointment details before updating
+        const [appointmentBefore] = await db.query(
+            `SELECT a.patient_id, p.user_id as patient_user_id 
+             FROM appointments a 
+             JOIN patients p ON a.patient_id = p.id 
+             WHERE a.id = ? AND a.lab_id = ?`,
+            [appointment_id, lab_id]
+        );
+
         // Update appointment with status and optional notes
         if (notes !== undefined) {
             await db.query('UPDATE appointments SET status = ?, notes = ? WHERE id = ? AND lab_id = ?', 
@@ -135,6 +145,22 @@ router.put('/appointments/:appointment_id', [auth, authorize('lab')], async (req
         } else {
             await db.query('UPDATE appointments SET status = ? WHERE id = ? AND lab_id = ?', 
                 [nextStatus, appointment_id, lab_id]);
+        }
+
+        // Send notification to patient if appointment is confirmed
+        if (nextStatus === 'confirmed' && appointmentBefore && appointmentBefore.length > 0) {
+            try {
+                const [labUser] = await db.query('SELECT name FROM users WHERE id = ?', [req.user.id]);
+                const labName = labUser && labUser.length > 0 ? labUser[0].name : 'The lab';
+                await notificationService.notifyPatientLabApproval(
+                    appointmentBefore[0].patient_user_id,
+                    parseInt(appointment_id),
+                    labName
+                );
+            } catch (notifErr) {
+                console.error('Error sending notification:', notifErr);
+                // Don't fail the request if notification fails
+            }
         }
 
         const [updatedRows] = await db.query(
@@ -190,11 +216,57 @@ router.post(
             // 4. Get the file path (relative to project root)
             const resultsUrl = path.relative(process.cwd(), req.file.path).replace(/\\/g, '/');
 
-            // 5. Update the lab test with the result URL and set status to 'completed'
+            // 5. Get test details before updating
+            const [testDetails] = await db.query(
+                `SELECT lt.patient_id, p.user_id as patient_user_id, lt.requested_by_doctor_id
+                 FROM lab_tests lt
+                 JOIN patients p ON lt.patient_id = p.id
+                 WHERE lt.id = ?`,
+                [test_id]
+            );
+
+            // 6. Update the lab test with the result URL and set status to 'completed'
             await db.query(
                 'UPDATE lab_tests SET results_url = ?, status = ? WHERE id = ?',
                 [resultsUrl, 'completed', test_id]
             );
+
+            // 7. Send notifications
+            try {
+                const [labUser] = await db.query('SELECT name FROM users WHERE id = ?', [req.user.id]);
+                const labName = labUser && labUser.length > 0 ? labUser[0].name : 'The lab';
+
+                // Notify patient about lab results
+                if (testDetails && testDetails.length > 0) {
+                    await notificationService.notifyPatientLabResult(
+                        testDetails[0].patient_user_id,
+                        parseInt(test_id),
+                        labName
+                    );
+
+                    // Also notify the requesting doctor if exists
+                    if (testDetails[0].requested_by_doctor_id) {
+                        const [doctorRows] = await db.query(
+                            'SELECT user_id FROM doctors WHERE id = ?',
+                            [testDetails[0].requested_by_doctor_id]
+                        );
+                        if (doctorRows && doctorRows.length > 0) {
+                            // Doctor can be notified about lab results being ready
+                            await notificationService.createNotification(
+                                doctorRows[0].user_id,
+                                notificationService.NOTIFICATION_TYPES.LAB_RESULT,
+                                'Lab Results Ready',
+                                `Lab results for patient are now available.`,
+                                parseInt(test_id),
+                                'lab_test'
+                            );
+                        }
+                    }
+                }
+            } catch (notifErr) {
+                console.error('Error sending notification:', notifErr);
+                // Don't fail the request if notification fails
+            }
 
             res.json({
                 msg: 'Lab test result uploaded successfully',
@@ -242,10 +314,35 @@ router.post(
 
             const resultsUrl = path.relative(process.cwd(), req.file.path).replace(/\\/g, '/');
 
+            // Get appointment details before updating
+            const [appointmentData] = await db.query(
+                `SELECT a.patient_id, p.user_id as patient_user_id 
+                 FROM appointments a 
+                 JOIN patients p ON a.patient_id = p.id 
+                 WHERE a.id = ?`,
+                [appointment_id]
+            );
+
             await db.query(
                 'UPDATE appointments SET status = ?, notes = ? WHERE id = ?',
                 ['completed', `Lab result: ${resultsUrl}`, appointment_id]
             );
+
+            // Send notification to patient
+            try {
+                if (appointmentData && appointmentData.length > 0) {
+                    const [labUser] = await db.query('SELECT name FROM users WHERE id = ?', [req.user.id]);
+                    const labName = labUser && labUser.length > 0 ? labUser[0].name : 'The lab';
+                    await notificationService.notifyPatientLabResult(
+                        appointmentData[0].patient_user_id,
+                        parseInt(appointment_id),
+                        labName
+                    );
+                }
+            } catch (notifErr) {
+                console.error('Error sending notification:', notifErr);
+                // Don't fail the request if notification fails
+            }
 
             res.json({
                 msg: 'Lab appointment result uploaded successfully',
@@ -259,6 +356,104 @@ router.post(
         }
     }
 );
+
+// --- @route    GET /api/labs/notifications ---
+// --- @desc     Get notifications for the current lab ---
+// --- @access   Private (Lab) ---
+router.get('/notifications', [auth, authorize('lab')], async (req, res) => {
+    try {
+        const { unread_only } = req.query;
+        const unreadOnly = unread_only === 'true' || unread_only === '1';
+        
+        const notifications = await notificationService.getNotifications(req.user.id, unreadOnly);
+        res.json(notifications);
+    } catch (err) {
+        console.error('Error fetching notifications:', err);
+        res.status(500).json({ msg: 'Server Error', error: err.message });
+    }
+});
+
+// --- @route    GET /api/labs/notifications/unread-count ---
+// --- @desc     Get unread notification count for the current lab ---
+// --- @access   Private (Lab) ---
+router.get('/notifications/unread-count', [auth, authorize('lab')], async (req, res) => {
+    try {
+        const count = await notificationService.getUnreadCount(req.user.id);
+        res.json({ count });
+    } catch (err) {
+        console.error('Error fetching unread count:', err);
+        res.status(500).json({ msg: 'Server Error', error: err.message });
+    }
+});
+
+// --- @route    PUT /api/labs/notifications/:notificationId/read ---
+// --- @desc     Mark a notification as read ---
+// --- @access   Private (Lab) ---
+router.put('/notifications/:notificationId/read', [auth, authorize('lab')], async (req, res) => {
+    try {
+        const { notificationId } = req.params;
+        const success = await notificationService.markAsRead(parseInt(notificationId), req.user.id);
+        
+        if (success) {
+            res.json({ msg: 'Notification marked as read' });
+        } else {
+            res.status(404).json({ msg: 'Notification not found' });
+        }
+    } catch (err) {
+        console.error('Error marking notification as read:', err);
+        res.status(500).json({ msg: 'Server Error', error: err.message });
+    }
+});
+
+// --- @route    PUT /api/labs/notifications/read-all ---
+// --- @desc     Mark all notifications as read for the current lab ---
+// --- @access   Private (Lab) ---
+router.put('/notifications/read-all', [auth, authorize('lab')], async (req, res) => {
+    try {
+        const count = await notificationService.markAllAsRead(req.user.id);
+        res.json({ msg: 'All notifications marked as read', count });
+    } catch (err) {
+        console.error('Error marking all notifications as read:', err);
+        res.status(500).json({ msg: 'Server Error', error: err.message });
+    }
+});
+
+// --- @route    POST /api/labs/request-appointment ---
+// --- @desc     Request a patient to book an appointment with the lab ---
+// --- @access   Private (Lab) ---
+router.post('/request-appointment', [auth, authorize('lab')], async (req, res) => {
+    try {
+        const { patient_id } = req.body || {};
+        
+        if (!patient_id) {
+            return res.status(400).json({ msg: 'Patient ID is required' });
+        }
+
+        const patientId = parseInt(patient_id);
+        if (isNaN(patientId) || patientId <= 0) {
+            return res.status(400).json({ msg: 'Invalid patient ID' });
+        }
+
+        // Get patient user_id
+        const [patientRows] = await db.query('SELECT user_id FROM patients WHERE id = ?', [patientId]);
+        if (patientRows && patientRows.length > 0) {
+            const [labUser] = await db.query('SELECT name FROM users WHERE id = ?', [req.user.id]);
+            const labName = labUser && labUser.length > 0 ? labUser[0].name : 'A lab';
+            
+            await notificationService.notifyPatientLabAppointmentRequest(
+                patientRows[0].user_id,
+                labName
+            );
+            
+            res.json({ msg: 'Appointment request sent to patient' });
+        } else {
+            res.status(404).json({ msg: 'Patient not found' });
+        }
+    } catch (err) {
+        console.error('Error requesting appointment:', err);
+        res.status(500).json({ msg: 'Server Error', error: err.message });
+    }
+});
 
 module.exports = router;
 

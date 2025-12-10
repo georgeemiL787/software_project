@@ -149,7 +149,46 @@ CREATE TABLE IF NOT EXISTS refresh_tokens (
 ) ENGINE=InnoDB;
 
 -- ============================================================================
--- 12. Create Indexes for better query performance
+-- 12. Create Availability table (for Doctor and Lab appointment time slots)
+-- Stores available appointment times that patients can choose from
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS availability (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    doctor_id INT NULL, -- Nullable: can be NULL if lab_id is set
+    lab_id INT NULL, -- Nullable: can be NULL if doctor_id is set
+    available_time DATETIME NOT NULL, -- The specific time slot available
+    duration_minutes INT DEFAULT 30, -- Duration of the appointment slot in minutes
+    is_available BOOLEAN DEFAULT TRUE, -- Can be set to FALSE to temporarily block a slot
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (doctor_id) REFERENCES doctors(id) ON DELETE CASCADE,
+    FOREIGN KEY (lab_id) REFERENCES labs(id) ON DELETE CASCADE,
+    -- Ensure at least one of doctor_id or lab_id is provided
+    CHECK (doctor_id IS NOT NULL OR lab_id IS NOT NULL)
+) ENGINE=InnoDB;
+
+-- ============================================================================
+-- 13. Create Notifications table
+-- Stores notifications for patients, doctors, and labs
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS notifications (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    type VARCHAR(50) NOT NULL, -- e.g., 'appointment_booked', 'doctor_feedback', 'lab_approval', 'model_prediction', etc.
+    title VARCHAR(255) NOT NULL,
+    message TEXT NOT NULL,
+    related_id INT NULL, -- ID of related entity (appointment_id, submission_id, lab_test_id, etc.)
+    related_type VARCHAR(50) NULL, -- Type of related entity ('appointment', 'submission', 'lab_test', etc.)
+    is_read BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    INDEX idx_user_id (user_id),
+    INDEX idx_is_read (is_read),
+    INDEX idx_created_at (created_at),
+    INDEX idx_type (type)
+) ENGINE=InnoDB;
+
+-- ============================================================================
+-- 14. Create Indexes for better query performance
 -- MySQL doesn't support CREATE INDEX IF NOT EXISTS, so we use conditional logic
 -- ============================================================================
 SET @dbname = DATABASE();
@@ -273,8 +312,76 @@ PREPARE createIndexIfNotExists FROM @preparedStatement;
 EXECUTE createIndexIfNotExists;
 DEALLOCATE PREPARE createIndexIfNotExists;
 
+-- Create index on availability.doctor_id if it doesn't exist
+SET @indexname = 'idx_availability_doctor';
+SET @preparedStatement = (SELECT IF(
+  (
+    SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
+    WHERE
+      (table_schema = @dbname)
+      AND (table_name = 'availability')
+      AND (index_name = @indexname)
+  ) > 0,
+  'SELECT 1',
+  CONCAT('CREATE INDEX ', @indexname, ' ON availability(doctor_id)')
+));
+PREPARE createIndexIfNotExists FROM @preparedStatement;
+EXECUTE createIndexIfNotExists;
+DEALLOCATE PREPARE createIndexIfNotExists;
+
+-- Create index on availability.lab_id if it doesn't exist
+SET @indexname = 'idx_availability_lab';
+SET @preparedStatement = (SELECT IF(
+  (
+    SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
+    WHERE
+      (table_schema = @dbname)
+      AND (table_name = 'availability')
+      AND (index_name = @indexname)
+  ) > 0,
+  'SELECT 1',
+  CONCAT('CREATE INDEX ', @indexname, ' ON availability(lab_id)')
+));
+PREPARE createIndexIfNotExists FROM @preparedStatement;
+EXECUTE createIndexIfNotExists;
+DEALLOCATE PREPARE createIndexIfNotExists;
+
+-- Create index on availability.available_time if it doesn't exist
+SET @indexname = 'idx_availability_time';
+SET @preparedStatement = (SELECT IF(
+  (
+    SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
+    WHERE
+      (table_schema = @dbname)
+      AND (table_name = 'availability')
+      AND (index_name = @indexname)
+  ) > 0,
+  'SELECT 1',
+  CONCAT('CREATE INDEX ', @indexname, ' ON availability(available_time)')
+));
+PREPARE createIndexIfNotExists FROM @preparedStatement;
+EXECUTE createIndexIfNotExists;
+DEALLOCATE PREPARE createIndexIfNotExists;
+
+-- Create index on availability.is_available if it doesn't exist
+SET @indexname = 'idx_availability_status';
+SET @preparedStatement = (SELECT IF(
+  (
+    SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
+    WHERE
+      (table_schema = @dbname)
+      AND (table_name = 'availability')
+      AND (index_name = @indexname)
+  ) > 0,
+  'SELECT 1',
+  CONCAT('CREATE INDEX ', @indexname, ' ON availability(is_available)')
+));
+PREPARE createIndexIfNotExists FROM @preparedStatement;
+EXECUTE createIndexIfNotExists;
+DEALLOCATE PREPARE createIndexIfNotExists;
+
 -- ============================================================================
--- 13. Insert Sample/Dummy Data (Optional - Comment out for production)
+-- 15. Insert Sample/Dummy Data (Optional - Comment out for production)
 -- ============================================================================
 
 -- Create a user for a patient
@@ -309,32 +416,70 @@ VALUES (@bob_id, 'Dermatology', '123 Health St, Medtown', TRUE, TRUE);
 INSERT INTO labs (user_id, lab_address, available_tests, verified, is_active)
 VALUES (@lab_id, '456 Science Ave, Medtown', '["Blood Panel", "Biopsy"]', TRUE, TRUE);
 
--- Add a dummy appointment
+-- Add a dummy appointment (10:00 AM)
 SET @alice_patient_id = (SELECT id FROM patients WHERE user_id = @alice_id);
 SET @bob_doctor_id = (SELECT id FROM doctors WHERE user_id = @bob_id);
 
 INSERT INTO appointments (patient_id, doctor_id, appointment_time, status)
-VALUES (@alice_patient_id, @bob_doctor_id, '2025-11-20 10:00:00', 'confirmed');
+VALUES (@alice_patient_id, @bob_doctor_id, '2025-11-20 10:00:00', 'confirmed');  -- 10:00 AM
 
--- ============================================================================
--- UTILITY QUERIES (for reference - not executed automatically)
--- ============================================================================
+-- Add all availability slots in a single INSERT statement
+-- Doctor slots: Tomorrow and day after tomorrow at 9:00 AM, 9:30 AM, 10:30 AM, 11:00 AM, 2:00 PM, 2:30 PM
+-- Lab slots: Tomorrow and day after tomorrow at 8:00 AM, 9:00 AM, 10:00 AM, 1:00 PM, 2:00 PM, 3:00 PM
+-- Using DATE_ADD to ensure dates are always in the future
+SET @lab_lab_id = (SELECT id FROM labs WHERE user_id = @lab_id);
 
--- Promote a user to doctor role by email:
--- UPDATE users SET role = 'doctor' WHERE email = 'user_email_here@example.com' LIMIT 1;
---
--- Example:
--- UPDATE users SET role = 'doctor' WHERE email = 'alice@example.com' LIMIT 1;
+INSERT INTO availability (doctor_id, lab_id, available_time, duration_minutes, is_available)
+VALUES 
+    -- Doctor availability slots (tomorrow)
+    (@bob_doctor_id, NULL, DATE_ADD(DATE(NOW()), INTERVAL 1 DAY) + INTERVAL 9 HOUR, 30, TRUE),  -- Tomorrow 9:00 AM
+    (@bob_doctor_id, NULL, DATE_ADD(DATE(NOW()), INTERVAL 1 DAY) + INTERVAL 9 HOUR + INTERVAL 30 MINUTE, 30, TRUE),  -- Tomorrow 9:30 AM
+    (@bob_doctor_id, NULL, DATE_ADD(DATE(NOW()), INTERVAL 1 DAY) + INTERVAL 10 HOUR + INTERVAL 30 MINUTE, 30, TRUE),  -- Tomorrow 10:30 AM
+    (@bob_doctor_id, NULL, DATE_ADD(DATE(NOW()), INTERVAL 1 DAY) + INTERVAL 11 HOUR, 30, TRUE),  -- Tomorrow 11:00 AM
+    (@bob_doctor_id, NULL, DATE_ADD(DATE(NOW()), INTERVAL 1 DAY) + INTERVAL 14 HOUR, 30, TRUE),  -- Tomorrow 2:00 PM
+    (@bob_doctor_id, NULL, DATE_ADD(DATE(NOW()), INTERVAL 1 DAY) + INTERVAL 14 HOUR + INTERVAL 30 MINUTE, 30, TRUE),  -- Tomorrow 2:30 PM
+    -- Doctor availability slots (day after tomorrow)
+    (@bob_doctor_id, NULL, DATE_ADD(DATE(NOW()), INTERVAL 2 DAY) + INTERVAL 9 HOUR, 30, TRUE),  -- Day after tomorrow 9:00 AM
+    (@bob_doctor_id, NULL, DATE_ADD(DATE(NOW()), INTERVAL 2 DAY) + INTERVAL 9 HOUR + INTERVAL 30 MINUTE, 30, TRUE),  -- Day after tomorrow 9:30 AM
+    (@bob_doctor_id, NULL, DATE_ADD(DATE(NOW()), INTERVAL 2 DAY) + INTERVAL 10 HOUR + INTERVAL 30 MINUTE, 30, TRUE),  -- Day after tomorrow 10:30 AM
+    (@bob_doctor_id, NULL, DATE_ADD(DATE(NOW()), INTERVAL 2 DAY) + INTERVAL 11 HOUR, 30, TRUE),  -- Day after tomorrow 11:00 AM
+    (@bob_doctor_id, NULL, DATE_ADD(DATE(NOW()), INTERVAL 2 DAY) + INTERVAL 14 HOUR, 30, TRUE),  -- Day after tomorrow 2:00 PM
+    (@bob_doctor_id, NULL, DATE_ADD(DATE(NOW()), INTERVAL 2 DAY) + INTERVAL 14 HOUR + INTERVAL 30 MINUTE, 30, TRUE),  -- Day after tomorrow 2:30 PM
+    -- Lab availability slots (tomorrow)
+    (NULL, @lab_lab_id, DATE_ADD(DATE(NOW()), INTERVAL 1 DAY) + INTERVAL 8 HOUR, 60, TRUE),  -- Tomorrow 8:00 AM
+    (NULL, @lab_lab_id, DATE_ADD(DATE(NOW()), INTERVAL 1 DAY) + INTERVAL 9 HOUR, 60, TRUE),  -- Tomorrow 9:00 AM
+    (NULL, @lab_lab_id, DATE_ADD(DATE(NOW()), INTERVAL 1 DAY) + INTERVAL 10 HOUR, 60, TRUE),  -- Tomorrow 10:00 AM
+    (NULL, @lab_lab_id, DATE_ADD(DATE(NOW()), INTERVAL 1 DAY) + INTERVAL 13 HOUR, 60, TRUE),  -- Tomorrow 1:00 PM
+    (NULL, @lab_lab_id, DATE_ADD(DATE(NOW()), INTERVAL 1 DAY) + INTERVAL 14 HOUR, 60, TRUE),  -- Tomorrow 2:00 PM
+    (NULL, @lab_lab_id, DATE_ADD(DATE(NOW()), INTERVAL 1 DAY) + INTERVAL 15 HOUR, 60, TRUE),  -- Tomorrow 3:00 PM
+    -- Lab availability slots (day after tomorrow)
+    (NULL, @lab_lab_id, DATE_ADD(DATE(NOW()), INTERVAL 2 DAY) + INTERVAL 8 HOUR, 60, TRUE),  -- Day after tomorrow 8:00 AM
+    (NULL, @lab_lab_id, DATE_ADD(DATE(NOW()), INTERVAL 2 DAY) + INTERVAL 9 HOUR, 60, TRUE),  -- Day after tomorrow 9:00 AM
+    (NULL, @lab_lab_id, DATE_ADD(DATE(NOW()), INTERVAL 2 DAY) + INTERVAL 10 HOUR, 60, TRUE),  -- Day after tomorrow 10:00 AM
+    (NULL, @lab_lab_id, DATE_ADD(DATE(NOW()), INTERVAL 2 DAY) + INTERVAL 13 HOUR, 60, TRUE),  -- Day after tomorrow 1:00 PM
+    (NULL, @lab_lab_id, DATE_ADD(DATE(NOW()), INTERVAL 2 DAY) + INTERVAL 14 HOUR, 60, TRUE),  -- Day after tomorrow 2:00 PM
+    (NULL, @lab_lab_id, DATE_ADD(DATE(NOW()), INTERVAL 2 DAY) + INTERVAL 15 HOUR, 60, TRUE);  -- Day after tomorrow 3:00 PM
+    -- ============================================================================
+    -- Add Notifications Table
+    -- This table stores notifications for patients, doctors, and labs
+    -- ============================================================================
 
--- Verify a doctor:
--- UPDATE doctors SET verified = TRUE, verified_at = NOW(), verified_by = @admin_id 
--- WHERE user_id = (SELECT id FROM users WHERE email = 'doctor_email@example.com');
+    CREATE TABLE IF NOT EXISTS notifications (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id INT NOT NULL,
+        type VARCHAR(50) NOT NULL, -- e.g., 'appointment_booked', 'doctor_feedback', 'lab_approval', 'model_prediction', etc.
+        title VARCHAR(255) NOT NULL,
+        message TEXT NOT NULL,
+        related_id INT NULL, -- ID of related entity (appointment_id, submission_id, lab_test_id, etc.)
+        related_type VARCHAR(50) NULL, -- Type of related entity ('appointment', 'submission', 'lab_test', etc.)
+        is_read BOOLEAN DEFAULT FALSE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        INDEX idx_user_id (user_id),
+        INDEX idx_is_read (is_read),
+        INDEX idx_created_at (created_at),
+        INDEX idx_type (type)
+    ) ENGINE=InnoDB;
 
--- Verify a lab:
--- UPDATE labs SET verified = TRUE, verified_at = NOW(), verified_by = @admin_id 
--- WHERE user_id = (SELECT id FROM users WHERE email = 'lab_email@example.com');
 
--- ============================================================================
--- END OF SCHEMA
--- ============================================================================
-
+select * from users;

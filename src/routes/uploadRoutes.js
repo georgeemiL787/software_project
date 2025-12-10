@@ -4,6 +4,7 @@ const multer = require('multer');
 const path = require('path');
 const db = require('../db');
 const { auth, authorize } = require('../middleware/auth');
+const notificationService = require('../services/notificationService');
 
 // Try to load model service, but don't fail if TensorFlow.js is not installed
 let modelService = null;
@@ -105,8 +106,43 @@ router.post(
         [patientId, imagePath, aiResult.prediction, aiResult.confidence]
       );
 
+      const submissionId = result.insertId;
+
+      // Notify all doctors linked to this patient via appointments
+      try {
+        const [patientUser] = await db.query('SELECT name FROM users WHERE id = ?', [req.user.id]);
+        const patientName = patientUser && patientUser.length > 0 ? patientUser[0].name : 'A patient';
+
+        // Get all doctors who have appointments with this patient
+        const [doctorRows] = await db.query(
+          `SELECT DISTINCT d.user_id 
+           FROM doctors d
+           JOIN appointments a ON d.id = a.doctor_id
+           WHERE a.patient_id = ?`,
+          [patientId]
+        );
+
+        // Send notification to each doctor
+        for (const doctorRow of doctorRows) {
+          try {
+            await notificationService.notifyDoctorModelPrediction(
+              doctorRow.user_id,
+              submissionId,
+              patientName,
+              aiResult.prediction
+            );
+          } catch (notifErr) {
+            console.error(`Error notifying doctor ${doctorRow.user_id}:`, notifErr);
+            // Continue with other doctors even if one fails
+          }
+        }
+      } catch (notifErr) {
+        console.error('Error sending notifications:', notifErr);
+        // Don't fail the request if notification fails
+      }
+
       res.status(201).json({
-        id: result.insertId,
+        id: submissionId,
         patient_id: patientId,
         image_url: imagePath,
         ai_prediction: aiResult.prediction,

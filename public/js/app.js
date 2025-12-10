@@ -47,6 +47,24 @@ function updateNavigation() {
         logoutBtn.style.display = token ? 'inline-block' : 'none';
     }
     
+    // Update notification container
+    const notificationContainer = document.getElementById('notificationContainer');
+    if (notificationContainer) {
+        notificationContainer.style.display = token ? 'block' : 'none';
+        if (token) {
+            loadNotifications();
+            // Refresh notifications every 30 seconds
+            if (window.notificationInterval) {
+                clearInterval(window.notificationInterval);
+            }
+            window.notificationInterval = setInterval(loadNotifications, 30000);
+        } else {
+            if (window.notificationInterval) {
+                clearInterval(window.notificationInterval);
+            }
+        }
+    }
+    
     if (!token || !role) {
         // Not logged in - show only Home, Sign Up, Login
         if (homeTab) homeTab.style.display = 'inline-block';
@@ -203,6 +221,8 @@ function showPage(pageId) {
     if (pageId === 'patient-dashboard') {
         loadPatientAppointments();
         loadPatientSubmissions();
+        populateDoctorDropdown();
+        populateLabDropdown();
     } else if (pageId === 'doctor-dashboard') {
         loadPendingReviews();
         loadDoctorAppointments();
@@ -278,12 +298,210 @@ async function logout() {
 function clearToken() {
     localStorage.removeItem('token');
     currentUserRole = null;
+    if (window.notificationInterval) {
+        clearInterval(window.notificationInterval);
+    }
     updateTokenDisplay();
     showPage('home');
 }
 
 function updateTokenDisplay() {
     updateNavigation();
+}
+
+// Notification Functions
+let notificationDropdownOpen = false;
+
+function toggleNotificationDropdown() {
+    const dropdown = document.getElementById('notificationDropdown');
+    if (!dropdown) return;
+    
+    notificationDropdownOpen = !notificationDropdownOpen;
+    if (notificationDropdownOpen) {
+        dropdown.classList.add('show');
+        loadNotifications();
+    } else {
+        dropdown.classList.remove('show');
+    }
+}
+
+// Close dropdown when clicking outside
+document.addEventListener('click', function(event) {
+    const container = document.getElementById('notificationContainer');
+    const bell = document.getElementById('notificationBell');
+    const dropdown = document.getElementById('notificationDropdown');
+    
+    if (container && bell && dropdown && notificationDropdownOpen) {
+        if (!container.contains(event.target)) {
+            dropdown.classList.remove('show');
+            notificationDropdownOpen = false;
+        }
+    }
+});
+
+async function loadNotifications() {
+    const token = getToken();
+    if (!token) return;
+    
+    const role = getUserRole();
+    if (!role) return;
+    
+    const notificationList = document.getElementById('notificationList');
+    const notificationBadge = document.getElementById('notificationBadge');
+    
+    if (!notificationList) return;
+    
+    try {
+        // Get unread count
+        const countResponse = await fetch(`${API_BASE}/api/${role}s/notifications/unread-count`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (countResponse.ok) {
+            const countData = await countResponse.json();
+            const unreadCount = countData.count || 0;
+            
+            if (notificationBadge) {
+                if (unreadCount > 0) {
+                    notificationBadge.textContent = unreadCount > 99 ? '99+' : unreadCount;
+                    notificationBadge.style.display = 'flex';
+                } else {
+                    notificationBadge.style.display = 'none';
+                }
+            }
+        }
+        
+        // Get notifications
+        const response = await fetch(`${API_BASE}/api/${role}s/notifications?unread_only=false&limit=10`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (!response.ok) {
+            throw new Error('Failed to load notifications');
+        }
+        
+        const notifications = await response.json();
+        displayNotifications(notifications);
+    } catch (error) {
+        console.error('Error loading notifications:', error);
+        if (notificationList) {
+            notificationList.innerHTML = '<div class="notification-empty">Failed to load notifications</div>';
+        }
+    }
+}
+
+function displayNotifications(notifications) {
+    const notificationList = document.getElementById('notificationList');
+    if (!notificationList) return;
+    
+    if (!notifications || notifications.length === 0) {
+        notificationList.innerHTML = '<div class="notification-empty">No notifications</div>';
+        return;
+    }
+    
+    notificationList.innerHTML = notifications.map(notification => {
+        const timeAgo = getTimeAgo(notification.created_at);
+        const unreadClass = notification.is_read ? '' : 'unread';
+        
+        return `
+            <div class="notification-item ${unreadClass}" onclick="handleNotificationClick(${notification.id}, ${!notification.is_read})">
+                <div class="notification-title">${escapeHtml(notification.title)}</div>
+                <div class="notification-message">${escapeHtml(notification.message)}</div>
+                <div class="notification-time">${timeAgo}</div>
+            </div>
+        `;
+    }).join('');
+}
+
+function getTimeAgo(dateString) {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffInSeconds = Math.floor((now - date) / 1000);
+    
+    if (diffInSeconds < 60) {
+        return 'Just now';
+    } else if (diffInSeconds < 3600) {
+        const minutes = Math.floor(diffInSeconds / 60);
+        return `${minutes} minute${minutes !== 1 ? 's' : ''} ago`;
+    } else if (diffInSeconds < 86400) {
+        const hours = Math.floor(diffInSeconds / 3600);
+        return `${hours} hour${hours !== 1 ? 's' : ''} ago`;
+    } else if (diffInSeconds < 604800) {
+        const days = Math.floor(diffInSeconds / 86400);
+        return `${days} day${days !== 1 ? 's' : ''} ago`;
+    } else {
+        return date.toLocaleDateString();
+    }
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+async function handleNotificationClick(notificationId, isUnread) {
+    const token = getToken();
+    if (!token) return;
+    
+    const role = getUserRole();
+    if (!role) return;
+    
+    // Mark as read if unread
+    if (isUnread) {
+        try {
+            await fetch(`${API_BASE}/api/${role}s/notifications/${notificationId}/read`, {
+                method: 'PUT',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            
+            // Reload notifications to update UI
+            loadNotifications();
+        } catch (error) {
+            console.error('Error marking notification as read:', error);
+        }
+    }
+    
+    // Close dropdown
+    const dropdown = document.getElementById('notificationDropdown');
+    if (dropdown) {
+        dropdown.classList.remove('show');
+        notificationDropdownOpen = false;
+    }
+}
+
+async function markAllNotificationsAsRead() {
+    const token = getToken();
+    if (!token) return;
+    
+    const role = getUserRole();
+    if (!role) return;
+    
+    try {
+        const response = await fetch(`${API_BASE}/api/${role}s/notifications/read-all`, {
+            method: 'PUT',
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (response.ok) {
+            loadNotifications();
+        }
+    } catch (error) {
+        console.error('Error marking all notifications as read:', error);
+    }
+}
+
+function showAllNotifications() {
+    // Close dropdown
+    const dropdown = document.getElementById('notificationDropdown');
+    if (dropdown) {
+        dropdown.classList.remove('show');
+        notificationDropdownOpen = false;
+    }
+    
+    // You can navigate to a dedicated notifications page here
+    // For now, just reload all notifications
+    loadNotifications();
 }
 
 // Connection Test (kept for internal use, removed from UI)
@@ -657,6 +875,148 @@ function displayLabs(labs) {
     console.log(`Displayed ${labs.length} labs`);
 }
 
+// Populate doctor dropdown for appointment booking
+async function populateDoctorDropdown() {
+    const token = getToken();
+    if (!token) return;
+    
+    const select = document.getElementById('appointmentDoctorSelect');
+    if (!select) return;
+    
+    try {
+        const response = await fetch(`${API_BASE}/api/patients/doctors`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const doctors = await response.json();
+        
+        if (response.ok && Array.isArray(doctors)) {
+            select.innerHTML = '<option value="">-- Select a Doctor --</option>';
+            doctors.forEach(doctor => {
+                const option = document.createElement('option');
+                option.value = doctor.doctor_id || doctor.id;
+                option.textContent = `${doctor.name} - ${doctor.specialty || 'General Practitioner'}`;
+                select.appendChild(option);
+            });
+        }
+    } catch (error) {
+        console.error('Error populating doctor dropdown:', error);
+    }
+}
+
+// Populate lab dropdown for appointment booking
+async function populateLabDropdown() {
+    const token = getToken();
+    if (!token) return;
+    
+    const select = document.getElementById('appointmentLabSelect');
+    if (!select) return;
+    
+    try {
+        const response = await fetch(`${API_BASE}/api/patients/labs`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const labs = await response.json();
+        
+        if (response.ok && Array.isArray(labs)) {
+            select.innerHTML = '<option value="">-- Select a Lab --</option>';
+            labs.forEach(lab => {
+                const option = document.createElement('option');
+                option.value = lab.lab_id || lab.id;
+                option.textContent = lab.name || 'Unknown Lab';
+                select.appendChild(option);
+            });
+        }
+    } catch (error) {
+        console.error('Error populating lab dropdown:', error);
+    }
+}
+
+// Load available time slots for selected doctor
+async function loadDoctorAvailability() {
+    const token = getToken();
+    if (!token) return;
+    
+    const doctorSelect = document.getElementById('appointmentDoctorSelect');
+    const timeSelect = document.getElementById('appointmentDoctorTimeSelect');
+    
+    if (!doctorSelect || !timeSelect) return;
+    
+    const doctorId = doctorSelect.value;
+    if (!doctorId) {
+        timeSelect.innerHTML = '<option value="">-- Select Doctor First --</option>';
+        return;
+    }
+    
+    try {
+        const response = await fetch(`${API_BASE}/api/patients/doctors/${doctorId}/availability`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const availability = await response.json();
+        
+        if (response.ok && Array.isArray(availability)) {
+            if (availability.length === 0) {
+                timeSelect.innerHTML = '<option value="">No available time slots</option>';
+            } else {
+                timeSelect.innerHTML = '<option value="">-- Select a Time --</option>';
+                availability.forEach(slot => {
+                    const option = document.createElement('option');
+                    option.value = slot.available_time;
+                    option.textContent = `${slot.date} at ${slot.time_12hr} (${slot.duration_minutes} min)`;
+                    timeSelect.appendChild(option);
+                });
+            }
+        } else {
+            timeSelect.innerHTML = '<option value="">Error loading availability</option>';
+        }
+    } catch (error) {
+        console.error('Error loading doctor availability:', error);
+        timeSelect.innerHTML = '<option value="">Error loading availability</option>';
+    }
+}
+
+// Load available time slots for selected lab
+async function loadLabAvailability() {
+    const token = getToken();
+    if (!token) return;
+    
+    const labSelect = document.getElementById('appointmentLabSelect');
+    const timeSelect = document.getElementById('appointmentLabTimeSelect');
+    
+    if (!labSelect || !timeSelect) return;
+    
+    const labId = labSelect.value;
+    if (!labId) {
+        timeSelect.innerHTML = '<option value="">-- Select Lab First --</option>';
+        return;
+    }
+    
+    try {
+        const response = await fetch(`${API_BASE}/api/patients/labs/${labId}/availability`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const availability = await response.json();
+        
+        if (response.ok && Array.isArray(availability)) {
+            if (availability.length === 0) {
+                timeSelect.innerHTML = '<option value="">No available time slots</option>';
+            } else {
+                timeSelect.innerHTML = '<option value="">-- Select a Time --</option>';
+                availability.forEach(slot => {
+                    const option = document.createElement('option');
+                    option.value = slot.available_time;
+                    option.textContent = `${slot.date} at ${slot.time_12hr} (${slot.duration_minutes} min)`;
+                    timeSelect.appendChild(option);
+                });
+            }
+        } else {
+            timeSelect.innerHTML = '<option value="">Error loading availability</option>';
+        }
+    } catch (error) {
+        console.error('Error loading lab availability:', error);
+        timeSelect.innerHTML = '<option value="">Error loading availability</option>';
+    }
+}
+
 // New separate booking flows (doctor vs lab) for clarity in the UI
 async function parseJsonSafe(response) {
     // Clone the response so we can read it multiple times if needed
@@ -695,14 +1055,18 @@ async function bookDoctorAppointment() {
         showResponse('appointmentDoctorResponse', { error: 'Please login first' }, 'error');
         return;
     }
-    const doctorId = document.getElementById('appointmentDoctorId')?.value;
-    const appointmentTime = document.getElementById('appointmentDoctorTime')?.value;
+    const doctorSelect = document.getElementById('appointmentDoctorSelect');
+    const timeSelect = document.getElementById('appointmentDoctorTimeSelect');
+    
+    const doctorId = doctorSelect?.value;
+    const appointmentTime = timeSelect?.value;
+    
     if (!doctorId) {
-        showResponse('appointmentDoctorResponse', { error: 'Please enter a doctor ID' }, 'error');
+        showResponse('appointmentDoctorResponse', { error: 'Please select a doctor' }, 'error');
         return;
     }
     if (!appointmentTime) {
-        showResponse('appointmentDoctorResponse', { error: 'Please select an appointment time' }, 'error');
+        showResponse('appointmentDoctorResponse', { error: 'Please select an available time slot' }, 'error');
         return;
     }
     try {
@@ -720,8 +1084,14 @@ async function bookDoctorAppointment() {
         const data = await parseJsonSafe(response);
         showResponse('appointmentDoctorResponse', data, response.ok ? 'success' : 'error');
         if (response.ok) {
-            if (document.getElementById('appointmentDoctorId')) document.getElementById('appointmentDoctorId').value = '';
-            if (document.getElementById('appointmentDoctorTime')) document.getElementById('appointmentDoctorTime').value = '';
+            // Reset dropdowns
+            if (doctorSelect) doctorSelect.value = '';
+            if (timeSelect) {
+                timeSelect.innerHTML = '<option value="">-- Select Doctor First --</option>';
+                timeSelect.value = '';
+            }
+            // Mark the availability slot as unavailable
+            await loadDoctorAvailability();
             setTimeout(() => {
                 if (typeof loadPatientAppointments === 'function') {
                     loadPatientAppointments();
@@ -739,14 +1109,18 @@ async function bookLabAppointment() {
         showResponse('appointmentLabResponse', { error: 'Please login first' }, 'error');
         return;
     }
-    const labId = document.getElementById('appointmentLabId')?.value;
-    const appointmentTime = document.getElementById('appointmentLabTime')?.value;
+    const labSelect = document.getElementById('appointmentLabSelect');
+    const timeSelect = document.getElementById('appointmentLabTimeSelect');
+    
+    const labId = labSelect?.value;
+    const appointmentTime = timeSelect?.value;
+    
     if (!labId) {
-        showResponse('appointmentLabResponse', { error: 'Please enter a lab ID' }, 'error');
+        showResponse('appointmentLabResponse', { error: 'Please select a lab' }, 'error');
         return;
     }
     if (!appointmentTime) {
-        showResponse('appointmentLabResponse', { error: 'Please select an appointment time' }, 'error');
+        showResponse('appointmentLabResponse', { error: 'Please select an available time slot' }, 'error');
         return;
     }
     try {
@@ -764,8 +1138,14 @@ async function bookLabAppointment() {
         const data = await parseJsonSafe(response);
         showResponse('appointmentLabResponse', data, response.ok ? 'success' : 'error');
         if (response.ok) {
-            if (document.getElementById('appointmentLabId')) document.getElementById('appointmentLabId').value = '';
-            if (document.getElementById('appointmentLabTime')) document.getElementById('appointmentLabTime').value = '';
+            // Reset dropdowns
+            if (labSelect) labSelect.value = '';
+            if (timeSelect) {
+                timeSelect.innerHTML = '<option value="">-- Select Lab First --</option>';
+                timeSelect.value = '';
+            }
+            // Mark the availability slot as unavailable
+            await loadLabAvailability();
             setTimeout(() => {
                 if (typeof loadPatientAppointments === 'function') {
                     loadPatientAppointments();
@@ -2051,7 +2431,33 @@ async function viewUserDetails(userId) {
         });
         const data = await response.json();
         if (response.ok) {
-            alert(`User Details:\n\n${JSON.stringify(data, null, 2)}`);
+            const modal = document.getElementById('userDetailsModal');
+            const content = document.getElementById('userDetailsContent');
+            
+            // Format user details nicely
+            let html = `
+                <div style="margin-bottom: 1rem;">
+                    <h4 style="color: var(--dark-color); margin-bottom: 0.5rem;">Basic Information</h4>
+                    <p><strong>Name:</strong> ${escapeHtml(data.name || 'N/A')}</p>
+                    <p><strong>Email:</strong> ${escapeHtml(data.email || 'N/A')}</p>
+                    <p><strong>Role:</strong> ${escapeHtml(data.role || 'N/A')}</p>
+                    <p><strong>Status:</strong> <span class="status-badge ${data.is_active ? 'confirmed' : 'cancelled'}">${data.is_active ? 'Active' : 'Inactive'}</span></p>
+                    <p><strong>User ID:</strong> ${data.id}</p>
+                    <p><strong>Created:</strong> ${new Date(data.created_at).toLocaleString()}</p>
+                </div>
+            `;
+            
+            if (data.profile) {
+                html += `
+                    <div style="margin-top: 1.5rem; padding-top: 1rem; border-top: 2px solid var(--secondary-color);">
+                        <h4 style="color: var(--dark-color); margin-bottom: 0.5rem;">Profile Information</h4>
+                        <pre style="background: var(--main-color); padding: 1rem; border-radius: 6px; overflow-x: auto; font-size: 0.85rem;">${JSON.stringify(data.profile, null, 2)}</pre>
+                    </div>
+                `;
+            }
+            
+            content.innerHTML = html;
+            modal.classList.remove('hidden');
         } else {
             alert('Error: ' + JSON.stringify(data));
         }
@@ -2060,24 +2466,70 @@ async function viewUserDetails(userId) {
     }
 }
 
+function closeUserDetailsModal() {
+    document.getElementById('userDetailsModal').classList.add('hidden');
+}
+
 async function editUser(userId) {
     const token = getToken();
     if (!token) return;
-    const name = prompt('Enter new name (or leave empty to skip):');
-    const email = prompt('Enter new email (or leave empty to skip):');
-    const role = prompt('Enter new role (patient/doctor/lab/admin) or leave empty to skip:');
-    const isActive = prompt('Is active? (true/false) or leave empty to skip:');
     
-    const updates = {};
-    if (name) updates.name = name;
-    if (email) updates.email = email;
-    if (role) updates.role = role;
-    if (isActive !== '') updates.is_active = isActive === 'true';
+    try {
+        // Fetch current user data
+        const response = await fetch(`${API_BASE}/api/admin/users/${userId}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const userData = await response.json();
+        
+        if (!response.ok) {
+            alert('Error loading user: ' + JSON.stringify(userData));
+            return;
+        }
+        
+        // Populate modal with current data
+        document.getElementById('editUserId').value = userId;
+        document.getElementById('editUserName').value = userData.name || '';
+        document.getElementById('editUserEmail').value = userData.email || '';
+        document.getElementById('editUserRole').value = userData.role || 'patient';
+        document.getElementById('editUserIsActive').checked = userData.is_active === true || userData.is_active === 1;
+        document.getElementById('editUserResponse').classList.add('hidden');
+        
+        // Show modal
+        document.getElementById('editUserModal').classList.remove('hidden');
+    } catch (error) {
+        alert('Error: ' + error.message);
+    }
+}
+
+function closeEditUserModal() {
+    document.getElementById('editUserModal').classList.add('hidden');
+    document.getElementById('editUserResponse').classList.add('hidden');
+}
+
+async function submitEditUser() {
+    const token = getToken();
+    if (!token) return;
     
-    if (Object.keys(updates).length === 0) {
-        alert('No changes made');
+    const userId = document.getElementById('editUserId').value;
+    const name = document.getElementById('editUserName').value.trim();
+    const email = document.getElementById('editUserEmail').value.trim();
+    const role = document.getElementById('editUserRole').value;
+    const isActive = document.getElementById('editUserIsActive').checked;
+    
+    const responseDiv = document.getElementById('editUserResponse');
+    responseDiv.classList.add('hidden');
+    
+    if (!name || !email) {
+        showResponse('editUserResponse', { error: 'Name and email are required' }, 'error');
         return;
     }
+    
+    const updates = {
+        name,
+        email,
+        role,
+        is_active: isActive
+    };
     
     try {
         const response = await fetch(`${API_BASE}/api/admin/users/${userId}`, {
@@ -2090,26 +2542,74 @@ async function editUser(userId) {
         });
         const data = await response.json();
         if (response.ok) {
-            alert('User updated successfully!');
-            loadAllUsers();
+            showResponse('editUserResponse', { success: true, message: 'User updated successfully!' }, 'success');
+            setTimeout(() => {
+                closeEditUserModal();
+                loadAllUsers();
+            }, 1500);
         } else {
-            alert('Error: ' + JSON.stringify(data));
+            showResponse('editUserResponse', data, 'error');
         }
     } catch (error) {
-        alert('Error: ' + error.message);
+        showResponse('editUserResponse', { error: error.message }, 'error');
     }
 }
 
 async function resetUserPassword(userId) {
     const token = getToken();
     if (!token) return;
-    const newPassword = prompt('Enter new password (min 6 characters):');
+    
+    try {
+        // Fetch user data to show name
+        const response = await fetch(`${API_BASE}/api/admin/users/${userId}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const userData = await response.json();
+        
+        if (!response.ok) {
+            alert('Error loading user: ' + JSON.stringify(userData));
+            return;
+        }
+        
+        // Populate modal
+        document.getElementById('resetPasswordUserId').value = userId;
+        document.getElementById('resetPasswordUserName').value = userData.name || 'User';
+        document.getElementById('resetPasswordNewPassword').value = '';
+        document.getElementById('resetPasswordConfirmPassword').value = '';
+        document.getElementById('resetPasswordResponse').classList.add('hidden');
+        
+        // Show modal
+        document.getElementById('resetPasswordModal').classList.remove('hidden');
+    } catch (error) {
+        alert('Error: ' + error.message);
+    }
+}
+
+function closeResetPasswordModal() {
+    document.getElementById('resetPasswordModal').classList.add('hidden');
+    document.getElementById('resetPasswordResponse').classList.add('hidden');
+    document.getElementById('resetPasswordNewPassword').value = '';
+    document.getElementById('resetPasswordConfirmPassword').value = '';
+}
+
+async function submitResetPassword() {
+    const token = getToken();
+    if (!token) return;
+    
+    const userId = document.getElementById('resetPasswordUserId').value;
+    const newPassword = document.getElementById('resetPasswordNewPassword').value;
+    const confirmPassword = document.getElementById('resetPasswordConfirmPassword').value;
+    
+    const responseDiv = document.getElementById('resetPasswordResponse');
+    responseDiv.classList.add('hidden');
+    
     if (!newPassword || newPassword.length < 6) {
-        alert('Password must be at least 6 characters');
+        showResponse('resetPasswordResponse', { error: 'Password must be at least 6 characters' }, 'error');
         return;
     }
     
-    if (!confirm('Are you sure you want to reset this user\'s password?')) {
+    if (newPassword !== confirmPassword) {
+        showResponse('resetPasswordResponse', { error: 'Passwords do not match' }, 'error');
         return;
     }
     
@@ -2124,12 +2624,15 @@ async function resetUserPassword(userId) {
         });
         const data = await response.json();
         if (response.ok) {
-            alert('Password reset successfully!');
+            showResponse('resetPasswordResponse', { success: true, message: 'Password reset successfully!' }, 'success');
+            setTimeout(() => {
+                closeResetPasswordModal();
+            }, 1500);
         } else {
-            alert('Error: ' + JSON.stringify(data));
+            showResponse('resetPasswordResponse', data, 'error');
         }
     } catch (error) {
-        alert('Error: ' + error.message);
+        showResponse('resetPasswordResponse', { error: error.message }, 'error');
     }
 }
 

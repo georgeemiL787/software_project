@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db');
 const { auth, authorize } = require('../middleware/auth');
+const notificationService = require('../services/notificationService');
 
 // --- @route    GET /api/doctors/patients ---
 // --- @desc     Get all patients linked to this doctor via appointments ---
@@ -193,8 +194,35 @@ router.put('/submissions/:submission_id/feedback', [auth, authorize('doctor')], 
     const { feedback } = req.body || {};
     if (!feedback) return res.status(400).json({ msg: 'Feedback text is required' });
 
+    // Get submission details to find patient
+    const [submissionRows] = await db.query(
+      `SELECT ns.patient_id, p.user_id as patient_user_id 
+       FROM nail_submissions ns 
+       JOIN patients p ON ns.patient_id = p.id 
+       WHERE ns.id = ?`,
+      [submission_id]
+    );
+    
+    if (!submissionRows || submissionRows.length === 0) {
+      return res.status(404).json({ msg: 'Submission not found' });
+    }
+
     const [result] = await db.query('UPDATE nail_submissions SET doctor_feedback = ? WHERE id = ?', [feedback, submission_id]);
     if (result.affectedRows === 0) return res.status(404).json({ msg: 'Submission not found' });
+
+    // Send notification to patient
+    try {
+      const [doctorUser] = await db.query('SELECT name FROM users WHERE id = ?', [req.user.id]);
+      const doctorName = doctorUser && doctorUser.length > 0 ? doctorUser[0].name : 'Your doctor';
+      await notificationService.notifyPatientDoctorFeedback(
+        submissionRows[0].patient_user_id,
+        parseInt(submission_id),
+        doctorName
+      );
+    } catch (notifErr) {
+      console.error('Error sending notification:', notifErr);
+      // Don't fail the request if notification fails
+    }
 
     res.json({ msg: 'Feedback updated successfully' });
   } catch (err) {
@@ -247,6 +275,58 @@ router.put('/appointments/:appointment_id/status', [auth, authorize('doctor')], 
       return res.status(404).json({ msg: 'Appointment not found or could not be updated' });
     }
 
+    // Send notification to patient if appointment is confirmed
+    if (status === 'confirmed') {
+      try {
+        const [appointmentData] = await db.query(
+          `SELECT a.patient_id, p.user_id as patient_user_id 
+           FROM appointments a 
+           JOIN patients p ON a.patient_id = p.id 
+           WHERE a.id = ?`,
+          [appointment_id]
+        );
+        
+        if (appointmentData && appointmentData.length > 0) {
+          const [doctorUser] = await db.query('SELECT name FROM users WHERE id = ?', [req.user.id]);
+          const doctorName = doctorUser && doctorUser.length > 0 ? doctorUser[0].name : 'Your doctor';
+          await notificationService.notifyPatientDoctorAppointmentApproval(
+            appointmentData[0].patient_user_id,
+            parseInt(appointment_id),
+            doctorName
+          );
+        }
+      } catch (notifErr) {
+        console.error('Error sending notification:', notifErr);
+        // Don't fail the request if notification fails
+      }
+    }
+
+    // If notes are provided, also send appointment feedback notification
+    if (notes && notes.trim() !== '') {
+      try {
+        const [appointmentData] = await db.query(
+          `SELECT a.patient_id, p.user_id as patient_user_id 
+           FROM appointments a 
+           JOIN patients p ON a.patient_id = p.id 
+           WHERE a.id = ?`,
+          [appointment_id]
+        );
+        
+        if (appointmentData && appointmentData.length > 0) {
+          const [doctorUser] = await db.query('SELECT name FROM users WHERE id = ?', [req.user.id]);
+          const doctorName = doctorUser && doctorUser.length > 0 ? doctorUser[0].name : 'Your doctor';
+          await notificationService.notifyPatientAppointmentFeedback(
+            appointmentData[0].patient_user_id,
+            parseInt(appointment_id),
+            doctorName
+          );
+        }
+      } catch (notifErr) {
+        console.error('Error sending notification:', notifErr);
+        // Don't fail the request if notification fails
+      }
+    }
+
     res.json({ 
       msg: status === 'confirmed' ? 'Appointment accepted successfully' : 'Appointment refused successfully',
       appointment_id: parseInt(appointment_id),
@@ -254,6 +334,67 @@ router.put('/appointments/:appointment_id/status', [auth, authorize('doctor')], 
     });
   } catch (err) {
     console.error(err && err.message);
+    res.status(500).json({ msg: 'Server Error', error: err.message });
+  }
+});
+
+// --- @route    GET /api/doctors/notifications ---
+// --- @desc     Get notifications for the current doctor ---
+// --- @access   Private (Doctor) ---
+router.get('/notifications', [auth, authorize('doctor')], async (req, res) => {
+  try {
+    const { unread_only } = req.query;
+    const unreadOnly = unread_only === 'true' || unread_only === '1';
+    
+    const notifications = await notificationService.getNotifications(req.user.id, unreadOnly);
+    res.json(notifications);
+  } catch (err) {
+    console.error('Error fetching notifications:', err);
+    res.status(500).json({ msg: 'Server Error', error: err.message });
+  }
+});
+
+// --- @route    GET /api/doctors/notifications/unread-count ---
+// --- @desc     Get unread notification count for the current doctor ---
+// --- @access   Private (Doctor) ---
+router.get('/notifications/unread-count', [auth, authorize('doctor')], async (req, res) => {
+  try {
+    const count = await notificationService.getUnreadCount(req.user.id);
+    res.json({ count });
+  } catch (err) {
+    console.error('Error fetching unread count:', err);
+    res.status(500).json({ msg: 'Server Error', error: err.message });
+  }
+});
+
+// --- @route    PUT /api/doctors/notifications/:notificationId/read ---
+// --- @desc     Mark a notification as read ---
+// --- @access   Private (Doctor) ---
+router.put('/notifications/:notificationId/read', [auth, authorize('doctor')], async (req, res) => {
+  try {
+    const { notificationId } = req.params;
+    const success = await notificationService.markAsRead(parseInt(notificationId), req.user.id);
+    
+    if (success) {
+      res.json({ msg: 'Notification marked as read' });
+    } else {
+      res.status(404).json({ msg: 'Notification not found' });
+    }
+  } catch (err) {
+    console.error('Error marking notification as read:', err);
+    res.status(500).json({ msg: 'Server Error', error: err.message });
+  }
+});
+
+// --- @route    PUT /api/doctors/notifications/read-all ---
+// --- @desc     Mark all notifications as read for the current doctor ---
+// --- @access   Private (Doctor) ---
+router.put('/notifications/read-all', [auth, authorize('doctor')], async (req, res) => {
+  try {
+    const count = await notificationService.markAllAsRead(req.user.id);
+    res.json({ msg: 'All notifications marked as read', count });
+  } catch (err) {
+    console.error('Error marking all notifications as read:', err);
     res.status(500).json({ msg: 'Server Error', error: err.message });
   }
 });
